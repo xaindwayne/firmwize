@@ -9,6 +9,7 @@ import { AuthProvider, RequireAuth } from "@/hooks/useAuth";
 import Home from "./pages/Home";
 import About from "./pages/About";
 import Booking from "./pages/Booking";
+import Services from "./pages/Services";
 import NotFound from "./pages/NotFound";
 
 // Auth pages
@@ -23,6 +24,9 @@ import Categories from "./pages/admin/Categories";
 import ActivityLog from "./pages/admin/ActivityLog";
 import Settings from "./pages/admin/Settings";
 import AIChat from "./pages/admin/AIChat";
+import KnowledgeRequests from "./pages/admin/KnowledgeRequests";
+import PriorityNotices from "./pages/admin/PriorityNotices";
+import CoverageDashboard from "./pages/admin/CoverageDashboard";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +42,7 @@ const App = () => (
             <Route path="/" element={<Home />} />
             <Route path="/about" element={<About />} />
             <Route path="/booking" element={<Booking />} />
+            <Route path="/services" element={<Services />} />
             
             {/* Auth routes */}
             <Route path="/login" element={<Login />} />
@@ -51,6 +56,9 @@ const App = () => (
             <Route path="/admin/activity" element={<RequireAuth><ActivityLog /></RequireAuth>} />
             <Route path="/admin/settings" element={<RequireAuth><Settings /></RequireAuth>} />
             <Route path="/admin/chat" element={<RequireAuth><AIChat /></RequireAuth>} />
+            <Route path="/admin/requests" element={<RequireAuth><KnowledgeRequests /></RequireAuth>} />
+            <Route path="/admin/notices" element={<RequireAuth><PriorityNotices /></RequireAuth>} />
+            <Route path="/admin/coverage" element={<RequireAuth><CoverageDashboard /></RequireAuth>} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
