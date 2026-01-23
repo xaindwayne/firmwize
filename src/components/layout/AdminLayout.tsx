@@ -46,13 +46,13 @@ import {
 
 const menuItems = [
   { title: 'Dashboard', url: '/admin', icon: LayoutDashboard },
+  { title: 'Employee Knowledge Analytics', url: '/admin/analytics', icon: TrendingUp },
   { title: 'AI Chat', url: '/admin/chat', icon: MessageSquare },
   { title: 'Knowledge Base', url: '/admin/knowledge', icon: FolderOpen },
   { title: 'Upload', url: '/admin/upload', icon: Upload },
   { title: 'Coverage & Gaps', url: '/admin/coverage', icon: BarChart3 },
   { title: 'Knowledge Requests', url: '/admin/requests', icon: HelpCircle },
   { title: 'Priority Notices', url: '/admin/notices', icon: Bell },
-  { title: 'Analytics', url: '/admin/analytics', icon: TrendingUp },
   { title: 'Questionnaires', url: '/admin/questionnaires', icon: ClipboardList },
   { title: 'Categories', url: '/admin/categories', icon: Tags },
   { title: 'Activity Log', url: '/admin/activity', icon: Activity },
