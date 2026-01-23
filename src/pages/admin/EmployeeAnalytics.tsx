@@ -1,497 +1,386 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
+import { AnalyticsFilters } from '@/components/analytics/AnalyticsFilters';
+import { KPICard } from '@/components/analytics/KPICard';
+import { AnalyticsChart } from '@/components/analytics/AnalyticsChart';
+import { ChartType } from '@/components/analytics/ChartTypeSelector';
+import { useAnalyticsData } from '@/hooks/useAnalyticsData';
+import { DateRange } from 'react-day-picker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Progress } from '@/components/ui/progress';
 import {
   MessageSquare,
-  FileText,
+  CheckCircle,
+  HelpCircle,
+  FileQuestion,
+  ClipboardList,
+  Bell,
   TrendingUp,
   Users,
-  Clock,
-  Zap,
-  HelpCircle,
-  CheckCircle,
 } from 'lucide-react';
 
-const COLORS = ['hsl(262, 83%, 58%)', 'hsl(217, 91%, 60%)', 'hsl(142, 71%, 45%)', 'hsl(38, 92%, 50%)', 'hsl(0, 84%, 60%)'];
-
-interface AnalyticsSummary {
-  totalQueries: number;
-  answeredQueries: number;
-  unansweredQueries: number;
-  avgResponseTime: string;
-  topDepartment: string;
-  topCategory: string;
-}
-
-interface DailyUsage {
-  date: string;
-  queries: number;
-  answered: number;
-}
-
-interface DepartmentUsage {
-  department: string;
-  queries: number;
-}
-
 export default function EmployeeAnalytics() {
-  const { user } = useAuth();
-  const [dateRange, setDateRange] = useState('7d');
-  const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<AnalyticsSummary>({
-    totalQueries: 0,
-    answeredQueries: 0,
-    unansweredQueries: 0,
-    avgResponseTime: '< 2s',
-    topDepartment: 'HR',
-    topCategory: 'Policies',
-  });
-  const [dailyUsage, setDailyUsage] = useState<DailyUsage[]>([]);
-  const [departmentUsage, setDepartmentUsage] = useState<DepartmentUsage[]>([]);
+  const [dateRange, setDateRange] = useState('30d');
+  const [department, setDepartment] = useState('all');
+  const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>();
 
-  useEffect(() => {
-    if (!user) return;
-    fetchAnalytics();
-  }, [user, dateRange]);
+  // Chart type states for each widget
+  const [usageChartType, setUsageChartType] = useState<ChartType>('line');
+  const [departmentChartType, setDepartmentChartType] = useState<ChartType>('bar');
+  const [gapsChartType, setGapsChartType] = useState<ChartType>('line');
+  const [topGapsChartType, setTopGapsChartType] = useState<ChartType>('table');
+  const [requestsChartType, setRequestsChartType] = useState<ChartType>('bar');
+  const [requestStatusChartType, setRequestStatusChartType] = useState<ChartType>('donut');
+  const [questionnaireChartType, setQuestionnaireChartType] = useState<ChartType>('bar');
+  const [noticesChartType, setNoticesChartType] = useState<ChartType>('line');
+  const [ackRateChartType, setAckRateChartType] = useState<ChartType>('progress');
 
-  const fetchAnalytics = async () => {
-    if (!user) return;
-    setLoading(true);
+  const {
+    loading,
+    metrics,
+    timeSeriesData,
+    departmentData,
+    topQuestions,
+    requestStatusData,
+    questionnaireStats,
+    noticeStats,
+    departments,
+    refresh,
+  } = useAnalyticsData(dateRange, department, customDateRange);
 
-    try {
-      // Fetch chat messages for query stats
-      const daysAgo = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - daysAgo);
-
-      const { data: messages } = await supabase
-        .from('chat_messages')
-        .select('id, role, created_at, sources')
-        .gte('created_at', startDate.toISOString());
-
-      const { data: unanswered } = await supabase
-        .from('unanswered_questions')
-        .select('id, department, created_at')
-        .eq('user_id', user.id)
-        .gte('created_at', startDate.toISOString());
-
-      // Calculate summary stats
-      const userMessages = messages?.filter(m => m.role === 'user') || [];
-      const assistantMessages = messages?.filter(m => m.role === 'assistant') || [];
-      const answeredCount = assistantMessages.filter(m => m.sources && (m.sources as any[]).length > 0).length;
-
-      setSummary({
-        totalQueries: userMessages.length,
-        answeredQueries: answeredCount,
-        unansweredQueries: unanswered?.length || 0,
-        avgResponseTime: '< 2s',
-        topDepartment: 'HR',
-        topCategory: 'Policies',
-      });
-
-      // Generate daily usage data
-      const dailyMap = new Map<string, { queries: number; answered: number }>();
-      for (let i = 0; i < daysAgo; i++) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        dailyMap.set(dateStr, { queries: 0, answered: 0 });
-      }
-
-      userMessages.forEach(msg => {
-        const dateStr = new Date(msg.created_at).toISOString().split('T')[0];
-        if (dailyMap.has(dateStr)) {
-          const current = dailyMap.get(dateStr)!;
-          current.queries++;
-        }
-      });
-
-      assistantMessages.forEach(msg => {
-        const dateStr = new Date(msg.created_at).toISOString().split('T')[0];
-        if (dailyMap.has(dateStr) && msg.sources && (msg.sources as any[]).length > 0) {
-          const current = dailyMap.get(dateStr)!;
-          current.answered++;
-        }
-      });
-
-      const dailyData = Array.from(dailyMap.entries())
-        .map(([date, data]) => ({ date, ...data }))
-        .reverse()
-        .slice(-7);
-
-      setDailyUsage(dailyData);
-
-      // Generate department usage from unanswered questions
-      const deptMap = new Map<string, number>();
-      unanswered?.forEach(q => {
-        const dept = q.department || 'Unknown';
-        deptMap.set(dept, (deptMap.get(dept) || 0) + 1);
-      });
-
-      const deptData = Array.from(deptMap.entries())
-        .map(([department, queries]) => ({ department, queries }))
-        .sort((a, b) => b.queries - a.queries);
-
-      setDepartmentUsage(deptData.length > 0 ? deptData : [
-        { department: 'HR', queries: 45 },
-        { department: 'Finance', queries: 32 },
-        { department: 'Operations', queries: 28 },
-        { department: 'Sales', queries: 22 },
-        { department: 'Legal', queries: 15 },
-      ]);
-
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
-    } finally {
-      setLoading(false);
-    }
+  // Format date for charts
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const answerRate = summary.totalQueries > 0 
-    ? Math.round((summary.answeredQueries / summary.totalQueries) * 100) 
-    : 0;
+  const formattedTimeData = timeSeriesData.map(d => ({
+    ...d,
+    date: formatDate(d.date),
+  }));
 
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Employee Analytics</h1>
-            <p className="text-muted-foreground">Usage trends, interactions, and department insights</p>
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Employee Knowledge Analytics</h1>
+          <p className="text-muted-foreground">
+            Unified insights from chat interactions, knowledge gaps, requests, questionnaires, and notices
+          </p>
+        </div>
+
+        {/* Global Filters */}
+        <AnalyticsFilters
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
+          department={department}
+          onDepartmentChange={setDepartment}
+          departments={departments}
+          customDateRange={customDateRange}
+          onCustomDateRangeChange={setCustomDateRange}
+          onRefresh={refresh}
+          loading={loading}
+        />
+
+        {/* Overview KPI Cards */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KPICard
+            title="Total Interactions"
+            value={metrics.totalInteractions}
+            icon={<MessageSquare className="h-6 w-6" />}
+            trend={{ value: metrics.interactionsTrend, isPositive: metrics.interactionsTrend > 0 }}
+            iconBgClass="bg-accent/10"
+            iconColorClass="text-accent"
+          />
+          <KPICard
+            title="Answer Rate"
+            value={`${metrics.answerRate}%`}
+            icon={<CheckCircle className="h-6 w-6" />}
+            trend={{ value: 5, isPositive: true }}
+            iconBgClass="bg-[hsl(var(--success))]/10"
+            iconColorClass="text-[hsl(var(--success))]"
+          />
+          <KPICard
+            title="Knowledge Gaps"
+            value={metrics.totalKnowledgeGaps}
+            icon={<HelpCircle className="h-6 w-6" />}
+            trend={{ value: metrics.gapsTrend, isPositive: metrics.gapsTrend < 0 }}
+            iconBgClass="bg-[hsl(var(--warning))]/10"
+            iconColorClass="text-[hsl(var(--warning))]"
+          />
+          <KPICard
+            title="Pending Requests"
+            value={metrics.pendingRequests}
+            icon={<FileQuestion className="h-6 w-6" />}
+            trend={{ value: metrics.requestsTrend, isPositive: metrics.requestsTrend < 0 }}
+            iconBgClass="bg-[hsl(217,91%,60%)]/10"
+            iconColorClass="text-[hsl(217,91%,60%)]"
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KPICard
+            title="Knowledge Requests"
+            value={metrics.totalKnowledgeRequests}
+            icon={<FileQuestion className="h-6 w-6" />}
+            iconBgClass="bg-[hsl(280,70%,55%)]/10"
+            iconColorClass="text-[hsl(280,70%,55%)]"
+          />
+          <KPICard
+            title="Questionnaire Responses"
+            value={metrics.questionnaireResponses}
+            icon={<ClipboardList className="h-6 w-6" />}
+            trend={{ value: metrics.responsesTrend, isPositive: metrics.responsesTrend > 0 }}
+            iconBgClass="bg-[hsl(180,70%,45%)]/10"
+            iconColorClass="text-[hsl(180,70%,45%)]"
+          />
+          <KPICard
+            title="Priority Notices Sent"
+            value={metrics.totalNotices}
+            icon={<Bell className="h-6 w-6" />}
+            iconBgClass="bg-destructive/10"
+            iconColorClass="text-destructive"
+          />
+          <KPICard
+            title="Notice Acknowledgment Rate"
+            value={`${metrics.acknowledgmentRate}%`}
+            icon={<TrendingUp className="h-6 w-6" />}
+            iconBgClass="bg-[hsl(var(--success))]/10"
+            iconColorClass="text-[hsl(var(--success))]"
+          />
+        </div>
+
+        {/* Usage Charts Section */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-accent" />
+            Usage & Interactions
+          </h2>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <AnalyticsChart
+              title="Interactions Over Time"
+              description="Daily chat interactions, answered vs unanswered"
+              data={formattedTimeData}
+              chartType={usageChartType}
+              onChartTypeChange={setUsageChartType}
+              availableTypes={['line', 'bar', 'stacked']}
+              xKey="date"
+              yKeys={[
+                { key: 'interactions', label: 'Total Interactions', color: 'hsl(262, 83%, 58%)' },
+                { key: 'answered', label: 'Answered', color: 'hsl(142, 71%, 45%)' },
+                { key: 'unanswered', label: 'Unanswered', color: 'hsl(38, 92%, 50%)' },
+              ]}
+              loading={loading}
+            />
+            <AnalyticsChart
+              title="Activity by Department"
+              description="Interactions and gaps by department"
+              data={departmentData}
+              chartType={departmentChartType}
+              onChartTypeChange={setDepartmentChartType}
+              availableTypes={['bar', 'stacked', 'progress', 'table']}
+              xKey="department"
+              yKeys={[
+                { key: 'interactions', label: 'Interactions', color: 'hsl(262, 83%, 58%)' },
+                { key: 'gaps', label: 'Gaps', color: 'hsl(38, 92%, 50%)' },
+                { key: 'requests', label: 'Requests', color: 'hsl(217, 91%, 60%)' },
+              ]}
+              loading={loading}
+            />
           </div>
-          <Select value={dateRange} onValueChange={setDateRange}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
-        {/* Summary Stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
-                  <MessageSquare className="h-6 w-6 text-accent" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{summary.totalQueries}</p>
-                  <p className="text-sm text-muted-foreground">Total Queries</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[hsl(142,71%,45%)]/10">
-                  <CheckCircle className="h-6 w-6 text-[hsl(142,71%,45%)]" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{answerRate}%</p>
-                  <p className="text-sm text-muted-foreground">Answer Rate</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[hsl(38,92%,50%)]/10">
-                  <HelpCircle className="h-6 w-6 text-[hsl(38,92%,50%)]" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{summary.unansweredQueries}</p>
-                  <p className="text-sm text-muted-foreground">Knowledge Gaps</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[hsl(217,91%,60%)]/10">
-                  <Zap className="h-6 w-6 text-[hsl(217,91%,60%)]" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{summary.avgResponseTime}</p>
-                  <p className="text-sm text-muted-foreground">Avg Response</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Tabs defaultValue="usage" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="usage" className="gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Usage Trends
-            </TabsTrigger>
-            <TabsTrigger value="departments" className="gap-2">
-              <Users className="h-4 w-4" />
-              Departments
-            </TabsTrigger>
-            <TabsTrigger value="content" className="gap-2">
-              <FileText className="h-4 w-4" />
-              Content
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="usage" className="space-y-6">
+        {/* Knowledge Gaps Section */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <HelpCircle className="h-5 w-5 text-[hsl(var(--warning))]" />
+            Knowledge Gaps
+          </h2>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <AnalyticsChart
+              title="Unanswered Questions Trend"
+              description="Knowledge gaps over time"
+              data={formattedTimeData}
+              chartType={gapsChartType}
+              onChartTypeChange={setGapsChartType}
+              availableTypes={['line', 'bar']}
+              xKey="date"
+              yKeys={[
+                { key: 'gaps', label: 'Knowledge Gaps', color: 'hsl(38, 92%, 50%)' },
+              ]}
+              loading={loading}
+            />
             <Card>
-              <CardHeader>
-                <CardTitle>Query Volume Over Time</CardTitle>
-                <CardDescription>Daily queries and successful answers</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                <div>
+                  <CardTitle className="text-base font-semibold">Top Unanswered Questions</CardTitle>
+                  <CardDescription>Most frequent knowledge gaps</CardDescription>
+                </div>
               </CardHeader>
               <CardContent>
                 {loading ? (
-                  <div className="h-[300px] flex items-center justify-center">
-                    <p className="text-muted-foreground">Loading...</p>
-                  </div>
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : topQuestions.length === 0 ? (
+                  <p className="text-muted-foreground">No knowledge gaps recorded</p>
                 ) : (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={dailyUsage}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis 
-                        dataKey="date" 
-                        tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        className="text-muted-foreground"
-                      />
-                      <YAxis className="text-muted-foreground" />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                        }}
-                      />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="queries" 
-                        stroke="hsl(262, 83%, 58%)" 
-                        strokeWidth={2}
-                        name="Total Queries"
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="answered" 
-                        stroke="hsl(142, 71%, 45%)" 
-                        strokeWidth={2}
-                        name="Answered"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <div className="max-h-[300px] overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Question</TableHead>
+                          <TableHead className="w-[80px] text-right">Count</TableHead>
+                          <TableHead className="w-[100px]">Dept</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {topQuestions.slice(0, 8).map((q, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium max-w-[250px] truncate">
+                              {q.question}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant="secondary">{q.count}</Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {q.department}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
+          </div>
+        </div>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Peak Usage Hours</CardTitle>
-                  <CardDescription>When employees ask the most questions</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {[
-                      { hour: '9:00 AM - 10:00 AM', percentage: 85 },
-                      { hour: '2:00 PM - 3:00 PM', percentage: 72 },
-                      { hour: '11:00 AM - 12:00 PM', percentage: 65 },
-                      { hour: '3:00 PM - 4:00 PM', percentage: 58 },
-                      { hour: '10:00 AM - 11:00 AM', percentage: 45 },
-                    ].map((item, index) => (
-                      <div key={index} className="space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span>{item.hour}</span>
-                          <span className="text-muted-foreground">{item.percentage}%</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-muted">
-                          <div 
-                            className="h-full rounded-full bg-accent transition-all"
-                            style={{ width: `${item.percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+        {/* Knowledge Requests Section */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <FileQuestion className="h-5 w-5 text-[hsl(217,91%,60%)]" />
+            Knowledge Requests
+          </h2>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <AnalyticsChart
+              title="Request Volume Over Time"
+              description="Knowledge requests submitted"
+              data={formattedTimeData}
+              chartType={requestsChartType}
+              onChartTypeChange={setRequestsChartType}
+              availableTypes={['line', 'bar']}
+              xKey="date"
+              yKeys={[
+                { key: 'requests', label: 'Requests', color: 'hsl(217, 91%, 60%)' },
+              ]}
+              loading={loading}
+            />
+            <AnalyticsChart
+              title="Requests by Status"
+              description="Distribution of request statuses"
+              data={requestStatusData}
+              chartType={requestStatusChartType}
+              onChartTypeChange={setRequestStatusChartType}
+              availableTypes={['donut', 'bar', 'progress']}
+              xKey="status"
+              yKeys={[
+                { key: 'count', label: 'Count' },
+              ]}
+              loading={loading}
+            />
+          </div>
+        </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Response Quality</CardTitle>
-                  <CardDescription>Breakdown of response types</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Answered with Sources', value: summary.answeredQueries },
-                          { name: 'Partial Match', value: Math.floor(summary.totalQueries * 0.15) },
-                          { name: 'Knowledge Gap', value: summary.unansweredQueries },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {COLORS.slice(0, 3).map((color, index) => (
-                          <Cell key={`cell-${index}`} fill={color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="departments" className="space-y-6">
+        {/* Questionnaires Section */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <ClipboardList className="h-5 w-5 text-[hsl(180,70%,45%)]" />
+            Questionnaires & Surveys
+          </h2>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <AnalyticsChart
+              title="Questionnaire Responses"
+              description="Response counts and alignment scores"
+              data={questionnaireStats}
+              chartType={questionnaireChartType}
+              onChartTypeChange={setQuestionnaireChartType}
+              availableTypes={['bar', 'table', 'progress']}
+              xKey="title"
+              yKeys={[
+                { key: 'responses', label: 'Responses', color: 'hsl(180, 70%, 45%)' },
+                { key: 'alignment', label: 'Alignment %', color: 'hsl(142, 71%, 45%)' },
+              ]}
+              loading={loading}
+            />
             <Card>
               <CardHeader>
-                <CardTitle>Department Activity</CardTitle>
-                <CardDescription>Query distribution by department</CardDescription>
+                <CardTitle className="text-base font-semibold">Response Summary</CardTitle>
+                <CardDescription>Alignment by questionnaire</CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={departmentUsage} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis type="number" className="text-muted-foreground" />
-                    <YAxis dataKey="department" type="category" width={100} className="text-muted-foreground" />
-                    <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'hsl(var(--card))', 
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                      }}
-                    />
-                    <Bar dataKey="queries" fill="hsl(262, 83%, 58%)" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {loading ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : questionnaireStats.length === 0 ? (
+                  <p className="text-muted-foreground">No questionnaire responses yet</p>
+                ) : (
+                  <div className="space-y-4">
+                    {questionnaireStats.map((q, i) => (
+                      <div key={i} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="font-medium truncate max-w-[200px]">{q.title}</span>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{q.responses} responses</Badge>
+                            <span className="text-muted-foreground">{q.alignment}%</span>
+                          </div>
+                        </div>
+                        <Progress value={q.alignment} className="h-2" />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
+          </div>
+        </div>
 
-            <div className="grid gap-6 lg:grid-cols-3">
-              {departmentUsage.slice(0, 3).map((dept, index) => (
-                <Card key={dept.department}>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-muted-foreground">#{index + 1} Department</p>
-                        <p className="text-xl font-bold">{dept.department}</p>
-                        <p className="text-sm text-muted-foreground mt-1">{dept.queries} queries</p>
-                      </div>
-                      <Badge 
-                        variant="secondary"
-                        style={{ backgroundColor: COLORS[index], color: 'white' }}
-                      >
-                        {Math.round((dept.queries / (departmentUsage.reduce((a, b) => a + b.queries, 0) || 1)) * 100)}%
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="content" className="space-y-6">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Most Accessed Documents</CardTitle>
-                  <CardDescription>Documents cited most in answers</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {[
-                      { title: 'Employee Handbook 2024', citations: 156 },
-                      { title: 'PTO Policy Guidelines', citations: 98 },
-                      { title: 'Remote Work Policy', citations: 87 },
-                      { title: 'Benefits Overview', citations: 72 },
-                      { title: 'Expense Reimbursement', citations: 65 },
-                    ].map((doc, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded bg-muted text-sm font-medium">
-                            {index + 1}
-                          </div>
-                          <span className="font-medium">{doc.title}</span>
-                        </div>
-                        <Badge variant="secondary">{doc.citations} citations</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Top Query Topics</CardTitle>
-                  <CardDescription>Most common question themes</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { topic: 'PTO/Vacation', count: 45 },
-                      { topic: 'Benefits', count: 38 },
-                      { topic: 'Remote Work', count: 35 },
-                      { topic: 'Expenses', count: 28 },
-                      { topic: 'Onboarding', count: 25 },
-                      { topic: 'Performance Review', count: 22 },
-                      { topic: 'Training', count: 18 },
-                      { topic: 'Equipment', count: 15 },
-                      { topic: 'Compliance', count: 12 },
-                      { topic: 'Security', count: 10 },
-                    ].map((item) => (
-                      <Badge 
-                        key={item.topic} 
-                        variant="outline" 
-                        className="px-3 py-1 text-sm"
-                      >
-                        {item.topic} <span className="ml-1 text-muted-foreground">({item.count})</span>
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
+        {/* Priority Notices Section */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <Bell className="h-5 w-5 text-destructive" />
+            Priority Notices & Alerts
+          </h2>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <AnalyticsChart
+              title="Notices Over Time"
+              description="Priority notices sent"
+              data={formattedTimeData}
+              chartType={noticesChartType}
+              onChartTypeChange={setNoticesChartType}
+              availableTypes={['line', 'bar']}
+              xKey="date"
+              yKeys={[
+                { key: 'notices', label: 'Notices Sent', color: 'hsl(0, 84%, 60%)' },
+              ]}
+              loading={loading}
+            />
+            <AnalyticsChart
+              title="Acknowledgment Rates"
+              description="Notice acknowledgment by title"
+              data={noticeStats}
+              chartType={ackRateChartType}
+              onChartTypeChange={setAckRateChartType}
+              availableTypes={['progress', 'bar', 'table']}
+              xKey="title"
+              yKeys={[
+                { key: 'rate', label: 'Ack Rate %' },
+              ]}
+              valueFormatter={(v) => `${v}%`}
+              loading={loading}
+            />
+          </div>
+        </div>
       </div>
     </AdminLayout>
   );
