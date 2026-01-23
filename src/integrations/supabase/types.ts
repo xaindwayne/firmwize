@@ -112,6 +112,65 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_conversations: {
+        Row: {
+          created_at: string
+          id: string
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          role: string
+          sources: Json | null
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          role: string
+          sources?: Json | null
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+          sources?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_settings: {
         Row: {
           api_base_url: string | null
@@ -191,64 +250,101 @@ export type Database = {
       }
       documents: {
         Row: {
+          ai_enabled: boolean | null
           category_id: string | null
+          content_text: string | null
           created_at: string
           current_version: number | null
           department: string | null
+          document_status: Database["public"]["Enums"]["document_status"] | null
+          expires_at: string | null
           file_path: string
           file_size: number | null
           file_type: string | null
           filename: string
           id: string
           is_deprecated: boolean | null
+          knowledge_type: Database["public"]["Enums"]["knowledge_type"] | null
+          last_reviewed_at: string | null
+          last_reviewed_by: string | null
           notes: string | null
+          questions_answered: string | null
           region: string | null
+          role_relevance: string[] | null
           sensitivity: string | null
           source_link: string | null
           status: string | null
+          team: string | null
           title: string
           updated_at: string
           user_id: string
+          visibility: Database["public"]["Enums"]["visibility_level"] | null
         }
         Insert: {
+          ai_enabled?: boolean | null
           category_id?: string | null
+          content_text?: string | null
           created_at?: string
           current_version?: number | null
           department?: string | null
+          document_status?:
+            | Database["public"]["Enums"]["document_status"]
+            | null
+          expires_at?: string | null
           file_path: string
           file_size?: number | null
           file_type?: string | null
           filename: string
           id?: string
           is_deprecated?: boolean | null
+          knowledge_type?: Database["public"]["Enums"]["knowledge_type"] | null
+          last_reviewed_at?: string | null
+          last_reviewed_by?: string | null
           notes?: string | null
+          questions_answered?: string | null
           region?: string | null
+          role_relevance?: string[] | null
           sensitivity?: string | null
           source_link?: string | null
           status?: string | null
+          team?: string | null
           title: string
           updated_at?: string
           user_id: string
+          visibility?: Database["public"]["Enums"]["visibility_level"] | null
         }
         Update: {
+          ai_enabled?: boolean | null
           category_id?: string | null
+          content_text?: string | null
           created_at?: string
           current_version?: number | null
           department?: string | null
+          document_status?:
+            | Database["public"]["Enums"]["document_status"]
+            | null
+          expires_at?: string | null
           file_path?: string
           file_size?: number | null
           file_type?: string | null
           filename?: string
           id?: string
           is_deprecated?: boolean | null
+          knowledge_type?: Database["public"]["Enums"]["knowledge_type"] | null
+          last_reviewed_at?: string | null
+          last_reviewed_by?: string | null
           notes?: string | null
+          questions_answered?: string | null
           region?: string | null
+          role_relevance?: string[] | null
           sensitivity?: string | null
           source_link?: string | null
           status?: string | null
+          team?: string | null
           title?: string
           updated_at?: string
           user_id?: string
+          visibility?: Database["public"]["Enums"]["visibility_level"] | null
         }
         Relationships: [
           {
@@ -259,6 +355,133 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      knowledge_requests: {
+        Row: {
+          created_at: string
+          department: string | null
+          id: string
+          question: string
+          resolution_answer: string | null
+          resolution_document_id: string | null
+          resolution_type: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          id?: string
+          question: string
+          resolution_answer?: string | null
+          resolution_document_id?: string | null
+          resolution_type?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          id?: string
+          question?: string
+          resolution_answer?: string | null
+          resolution_document_id?: string | null
+          resolution_type?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_requests_resolution_document_id_fkey"
+            columns: ["resolution_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notice_acknowledgments: {
+        Row: {
+          acknowledged_at: string
+          id: string
+          notice_id: string
+          user_id: string
+        }
+        Insert: {
+          acknowledged_at?: string
+          id?: string
+          notice_id: string
+          user_id: string
+        }
+        Update: {
+          acknowledged_at?: string
+          id?: string
+          notice_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notice_acknowledgments_notice_id_fkey"
+            columns: ["notice_id"]
+            isOneToOne: false
+            referencedRelation: "priority_notices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      priority_notices: {
+        Row: {
+          active: boolean | null
+          content: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          priority: string | null
+          requires_acknowledgment: boolean | null
+          target_departments: string[] | null
+          target_type: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean | null
+          content: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          priority?: string | null
+          requires_acknowledgment?: boolean | null
+          target_departments?: string[] | null
+          target_type?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean | null
+          content?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          priority?: string | null
+          requires_acknowledgment?: boolean | null
+          target_departments?: string[] | null
+          target_type?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -293,15 +516,168 @@ export type Database = {
         }
         Relationships: []
       }
+      questionnaire_responses: {
+        Row: {
+          created_at: string
+          department: string | null
+          id: string
+          questionnaire_id: string
+          responses: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          id?: string
+          questionnaire_id: string
+          responses: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          id?: string
+          questionnaire_id?: string
+          responses?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questionnaire_responses_questionnaire_id_fkey"
+            columns: ["questionnaire_id"]
+            isOneToOne: false
+            referencedRelation: "questionnaires"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      questionnaires: {
+        Row: {
+          active: boolean | null
+          created_at: string
+          description: string | null
+          expires_at: string | null
+          id: string
+          questions: Json
+          target_departments: string[] | null
+          target_type: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string
+          description?: string | null
+          expires_at?: string | null
+          id?: string
+          questions?: Json
+          target_departments?: string[] | null
+          target_type?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string
+          description?: string | null
+          expires_at?: string | null
+          id?: string
+          questions?: Json
+          target_departments?: string[] | null
+          target_type?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      unanswered_questions: {
+        Row: {
+          addressed: boolean | null
+          addressed_at: string | null
+          addressed_by_document_id: string | null
+          created_at: string
+          department: string | null
+          id: string
+          question: string
+          user_id: string
+        }
+        Insert: {
+          addressed?: boolean | null
+          addressed_at?: string | null
+          addressed_by_document_id?: string | null
+          created_at?: string
+          department?: string | null
+          id?: string
+          question: string
+          user_id: string
+        }
+        Update: {
+          addressed?: boolean | null
+          addressed_at?: string | null
+          addressed_by_document_id?: string | null
+          created_at?: string
+          department?: string | null
+          id?: string
+          question?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unanswered_questions_addressed_by_document_id_fkey"
+            columns: ["addressed_by_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "platform_admin" | "client_admin" | "employee"
+      document_status: "draft" | "in_review" | "approved" | "deprecated"
+      knowledge_type:
+        | "process_sop"
+        | "policy"
+        | "training"
+        | "faq"
+        | "template"
+        | "contacts"
+        | "external_source"
+        | "custom"
+      visibility_level: "company_wide" | "department_only" | "restricted"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -428,6 +804,20 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["platform_admin", "client_admin", "employee"],
+      document_status: ["draft", "in_review", "approved", "deprecated"],
+      knowledge_type: [
+        "process_sop",
+        "policy",
+        "training",
+        "faq",
+        "template",
+        "contacts",
+        "external_source",
+        "custom",
+      ],
+      visibility_level: ["company_wide", "department_only", "restricted"],
+    },
   },
 } as const
