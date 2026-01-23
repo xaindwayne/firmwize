@@ -27,6 +27,9 @@ import AIChat from "./pages/admin/AIChat";
 import KnowledgeRequests from "./pages/admin/KnowledgeRequests";
 import PriorityNotices from "./pages/admin/PriorityNotices";
 import CoverageDashboard from "./pages/admin/CoverageDashboard";
+import PlatformAdmin from "./pages/admin/PlatformAdmin";
+import EmployeeAnalytics from "./pages/admin/EmployeeAnalytics";
+import Questionnaires from "./pages/admin/Questionnaires";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +62,9 @@ const App = () => (
             <Route path="/admin/requests" element={<RequireAuth><KnowledgeRequests /></RequireAuth>} />
             <Route path="/admin/notices" element={<RequireAuth><PriorityNotices /></RequireAuth>} />
             <Route path="/admin/coverage" element={<RequireAuth><CoverageDashboard /></RequireAuth>} />
+            <Route path="/admin/platform" element={<RequireAuth><PlatformAdmin /></RequireAuth>} />
+            <Route path="/admin/analytics" element={<RequireAuth><EmployeeAnalytics /></RequireAuth>} />
+            <Route path="/admin/questionnaires" element={<RequireAuth><Questionnaires /></RequireAuth>} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />

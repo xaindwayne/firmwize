@@ -39,6 +39,9 @@ import {
   HelpCircle,
   Bell,
   BarChart3,
+  Palette,
+  ClipboardList,
+  TrendingUp,
 } from 'lucide-react';
 
 const menuItems = [
@@ -49,8 +52,11 @@ const menuItems = [
   { title: 'Coverage & Gaps', url: '/admin/coverage', icon: BarChart3 },
   { title: 'Knowledge Requests', url: '/admin/requests', icon: HelpCircle },
   { title: 'Priority Notices', url: '/admin/notices', icon: Bell },
+  { title: 'Analytics', url: '/admin/analytics', icon: TrendingUp },
+  { title: 'Questionnaires', url: '/admin/questionnaires', icon: ClipboardList },
   { title: 'Categories', url: '/admin/categories', icon: Tags },
   { title: 'Activity Log', url: '/admin/activity', icon: Activity },
+  { title: 'Platform Admin', url: '/admin/platform', icon: Palette },
   { title: 'Settings', url: '/admin/settings', icon: Settings },
 ];
 

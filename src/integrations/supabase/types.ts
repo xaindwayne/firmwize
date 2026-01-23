@@ -85,6 +85,42 @@ export type Database = {
         }
         Relationships: []
       }
+      branding_settings: {
+        Row: {
+          company_tagline: string | null
+          created_at: string
+          custom_css: string | null
+          id: string
+          logo_url: string | null
+          primary_color: string | null
+          secondary_color: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_tagline?: string | null
+          created_at?: string
+          custom_css?: string | null
+          id?: string
+          logo_url?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_tagline?: string | null
+          created_at?: string
+          custom_css?: string | null
+          id?: string
+          logo_url?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string
@@ -355,6 +391,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      employee_analytics: {
+        Row: {
+          created_at: string
+          department: string | null
+          event_data: Json | null
+          event_type: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       knowledge_requests: {
         Row: {
