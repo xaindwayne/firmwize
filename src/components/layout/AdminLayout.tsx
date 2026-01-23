@@ -36,16 +36,22 @@ import {
   LogOut,
   Brain,
   ChevronDown,
+  HelpCircle,
+  Bell,
+  BarChart3,
 } from 'lucide-react';
 
 const menuItems = [
   { title: 'Dashboard', url: '/admin', icon: LayoutDashboard },
+  { title: 'AI Chat', url: '/admin/chat', icon: MessageSquare },
   { title: 'Knowledge Base', url: '/admin/knowledge', icon: FolderOpen },
   { title: 'Upload', url: '/admin/upload', icon: Upload },
+  { title: 'Coverage & Gaps', url: '/admin/coverage', icon: BarChart3 },
+  { title: 'Knowledge Requests', url: '/admin/requests', icon: HelpCircle },
+  { title: 'Priority Notices', url: '/admin/notices', icon: Bell },
   { title: 'Categories', url: '/admin/categories', icon: Tags },
   { title: 'Activity Log', url: '/admin/activity', icon: Activity },
   { title: 'Settings', url: '/admin/settings', icon: Settings },
-  { title: 'AI Chat', url: '/admin/chat', icon: MessageSquare, preview: true },
 ];
 
 function AdminSidebar() {
@@ -90,11 +96,6 @@ function AdminSidebar() {
                       <Link to={item.url} className="flex items-center gap-3">
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
-                        {item.preview && (
-                          <span className="ml-auto rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
-                            Preview
-                          </span>
-                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
