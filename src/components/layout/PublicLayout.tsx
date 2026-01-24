@@ -21,6 +21,11 @@ export function PublicLayout({ children }: PublicLayoutProps) {
           </Link>
           
           <div className="flex items-center gap-4">
+            <Link to="/services">
+              <Button variant="ghost" size="sm">
+                Services
+              </Button>
+            </Link>
             <Link to="/about">
               <Button variant="ghost" size="sm">
                 About
@@ -57,6 +62,7 @@ export function PublicLayout({ children }: PublicLayoutProps) {
             </div>
             
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <Link to="/services" className="hover:text-foreground transition-colors">Services</Link>
               <Link to="/about" className="hover:text-foreground transition-colors">About</Link>
               <Link to="/booking" className="hover:text-foreground transition-colors">Contact</Link>
               <span>© {new Date().getFullYear()} IntelliBase. All rights reserved.</span>

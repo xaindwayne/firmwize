@@ -3,46 +3,49 @@ import { PublicLayout } from '@/components/layout/PublicLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  FileText,
+  UserPlus,
+  Brain,
   Users,
-  Shield,
-  Zap,
-  BookOpen,
-  MessageSquare,
+  BarChart3,
   ArrowRight,
   CheckCircle2,
+  MessageSquare,
 } from 'lucide-react';
 
-const useCases = [
+const services = [
   {
-    icon: BookOpen,
-    title: 'Onboarding',
-    description: 'Get new employees up to speed faster with instant access to training materials.',
+    icon: UserPlus,
+    title: 'Onboarding New Talent',
+    description: 'Accelerate ramp-up time for new hires with clear, role-specific knowledge and guidance from day one.',
+    link: '/services#onboarding',
   },
   {
-    icon: FileText,
-    title: 'Policies',
-    description: 'Make company policies searchable and accessible to everyone.',
+    icon: Brain,
+    title: 'AI Knowledge Vault',
+    description: 'An all-knowing internal AI that instantly answers employee questions from your complete knowledge base.',
+    link: '/services#knowledge-vault',
   },
   {
     icon: Users,
-    title: 'Training',
-    description: 'Deliver training content that employees can reference anytime.',
+    title: 'Expert Team Onboarding',
+    description: 'Our experts capture, structure, and implement your internal knowledge directly into the AI.',
+    link: '/services#expert-onboarding',
   },
   {
-    icon: Shield,
-    title: 'Compliance',
-    description: 'Ensure teams have access to the latest compliance documentation.',
+    icon: BarChart3,
+    title: 'Employee Knowledge Analytics',
+    description: 'Track and visualize employee knowledge usage with data-driven insights to improve performance.',
+    link: '/services#analytics',
   },
 ];
 
-const features = [
-  'Instant answers from your internal knowledge',
+const capabilities = [
+  'Instant AI-powered answers from your knowledge base',
   'Secure document management with version control',
-  'Smart categorization and search',
-  'Activity tracking and audit logs',
-  'Role-based access control',
-  'API integration ready',
+  'Smart categorization and intelligent search',
+  'Real-time analytics and usage tracking',
+  'Role-based access control and governance',
+  'Expert-led implementation and support',
 ];
 
 const testimonials = [
@@ -89,9 +92,9 @@ export default function Home() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
-              <Link to="/about">
+              <Link to="/services">
                 <Button size="lg" variant="outline">
-                  Learn more
+                  Explore our services
                 </Button>
               </Link>
             </div>
@@ -99,34 +102,36 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Use Cases Section */}
+      {/* Services Section */}
       <section className="border-t bg-muted/30 py-20">
         <div className="container mx-auto px-4">
           <div className="mb-12 text-center">
             <h2 className="text-3xl font-bold text-foreground md:text-4xl">
-              Built for enterprise knowledge
+              Four services to unlock your knowledge
             </h2>
             <p className="mt-4 text-muted-foreground">
-              From onboarding to compliance, make every document work harder for your team.
+              End-to-end solutions for capturing, organizing, accessing, and measuring organizational knowledge.
             </p>
           </div>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {useCases.map((useCase) => (
-              <Card key={useCase.title} className="group hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
-                    <useCase.icon className="h-6 w-6" />
-                  </div>
-                  <h3 className="mb-2 text-lg font-semibold text-foreground">{useCase.title}</h3>
-                  <p className="text-sm text-muted-foreground">{useCase.description}</p>
-                </CardContent>
-              </Card>
+            {services.map((service) => (
+              <Link to={service.link} key={service.title}>
+                <Card className="group h-full hover:shadow-lg transition-shadow">
+                  <CardContent className="p-6">
+                    <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
+                      <service.icon className="h-6 w-6" />
+                    </div>
+                    <h3 className="mb-2 text-lg font-semibold text-foreground">{service.title}</h3>
+                    <p className="text-sm text-muted-foreground">{service.description}</p>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
+      {/* Capabilities Section */}
       <section className="py-20">
         <div className="container mx-auto px-4">
           <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
@@ -138,17 +143,17 @@ export default function Home() {
                 A complete platform for uploading, organizing, and accessing your organization's knowledge through an intelligent AI assistant.
               </p>
               <ul className="mt-8 space-y-4">
-                {features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-3">
+                {capabilities.map((capability) => (
+                  <li key={capability} className="flex items-center gap-3">
                     <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-accent" />
-                    <span className="text-foreground">{feature}</span>
+                    <span className="text-foreground">{capability}</span>
                   </li>
                 ))}
               </ul>
               <div className="mt-8">
-                <Link to="/booking">
+                <Link to="/services">
                   <Button className="bg-accent hover:bg-accent/90">
-                    Get started
+                    Learn about our services
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
