@@ -2,7 +2,16 @@ import { Link } from 'react-router-dom';
 import { PublicLayout } from '@/components/layout/PublicLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowRight, Lightbulb, Target, Zap } from 'lucide-react';
+import { 
+  ArrowRight, 
+  Lightbulb, 
+  Target, 
+  Zap,
+  UserPlus,
+  Brain,
+  Users,
+  BarChart3,
+} from 'lucide-react';
 
 const values = [
   {
@@ -22,21 +31,30 @@ const values = [
   },
 ];
 
-const steps = [
+const services = [
   {
-    number: '01',
-    title: 'Upload Your Documents',
-    description: 'Drag and drop your company documents—policies, processes, training materials, and more.',
+    icon: UserPlus,
+    title: 'Onboarding New Talent',
+    description: 'Accelerate ramp-up time with role-specific knowledge and guidance.',
+    link: '/services#onboarding',
   },
   {
-    number: '02',
-    title: 'Organize & Categorize',
-    description: 'Tag documents by department, category, and sensitivity level for easy management.',
+    icon: Brain,
+    title: 'AI Knowledge Vault',
+    description: 'Instant AI-powered answers from your complete knowledge base.',
+    link: '/services#knowledge-vault',
   },
   {
-    number: '03',
-    title: 'Ask Questions',
-    description: 'Your team uses the AI assistant to get instant answers from your knowledge base.',
+    icon: Users,
+    title: 'Expert Team Onboarding',
+    description: 'Our experts implement your knowledge into the AI for you.',
+    link: '/services#expert-onboarding',
+  },
+  {
+    icon: BarChart3,
+    title: 'Employee Knowledge Analytics',
+    description: 'Data-driven insights to improve performance and decisions.',
+    link: '/services#analytics',
   },
 ];
 
@@ -86,27 +104,41 @@ export default function About() {
         </div>
       </section>
 
-      {/* How It Works Section */}
+      {/* Our Services Section */}
       <section className="py-20">
         <div className="container mx-auto px-4">
           <div className="mb-12 text-center">
             <h2 className="text-3xl font-bold text-foreground md:text-4xl">
-              How it works
+              Our services
             </h2>
             <p className="mt-4 text-muted-foreground">
-              Get started in three simple steps
+              Four comprehensive solutions for your knowledge management needs
             </p>
           </div>
-          <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-3">
-            {steps.map((step) => (
-              <Card key={step.number} className="relative overflow-hidden">
-                <CardContent className="p-6">
-                  <span className="text-5xl font-bold text-accent/20">{step.number}</span>
-                  <h3 className="mt-4 text-xl font-semibold text-foreground">{step.title}</h3>
-                  <p className="mt-2 text-muted-foreground">{step.description}</p>
-                </CardContent>
-              </Card>
+          <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-2">
+            {services.map((service) => (
+              <Link to={service.link} key={service.title}>
+                <Card className="group h-full transition-shadow hover:shadow-lg">
+                  <CardContent className="flex gap-4 p-6">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
+                      <service.icon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{service.title}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">{service.description}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
+          </div>
+          <div className="mt-8 text-center">
+            <Link to="/services">
+              <Button variant="outline">
+                Explore all services
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
