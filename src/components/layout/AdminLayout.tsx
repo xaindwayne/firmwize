@@ -42,6 +42,7 @@ import {
   Palette,
   ClipboardList,
   TrendingUp,
+  FileCheck,
 } from 'lucide-react';
 
 const menuItems = [
@@ -50,6 +51,7 @@ const menuItems = [
   { title: 'AI Chat', url: '/admin/chat', icon: MessageSquare },
   { title: 'Knowledge Base', url: '/admin/knowledge', icon: FolderOpen },
   { title: 'Upload', url: '/admin/upload', icon: Upload },
+  { title: 'Document Review', url: '/admin/review', icon: FileCheck },
   { title: 'Coverage & Gaps', url: '/admin/coverage', icon: BarChart3 },
   { title: 'Knowledge Requests', url: '/admin/requests', icon: HelpCircle },
   { title: 'Priority Notices', url: '/admin/notices', icon: Bell },

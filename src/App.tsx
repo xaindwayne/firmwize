@@ -30,6 +30,7 @@ import CoverageDashboard from "./pages/admin/CoverageDashboard";
 import PlatformAdmin from "./pages/admin/PlatformAdmin";
 import EmployeeAnalytics from "./pages/admin/EmployeeAnalytics";
 import Questionnaires from "./pages/admin/Questionnaires";
+import DocumentReview from "./pages/admin/DocumentReview";
 
 const queryClient = new QueryClient();
 
@@ -65,6 +66,7 @@ const App = () => (
             <Route path="/admin/platform" element={<RequireAuth><PlatformAdmin /></RequireAuth>} />
             <Route path="/admin/analytics" element={<RequireAuth><EmployeeAnalytics /></RequireAuth>} />
             <Route path="/admin/questionnaires" element={<RequireAuth><Questionnaires /></RequireAuth>} />
+            <Route path="/admin/review" element={<RequireAuth><DocumentReview /></RequireAuth>} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
