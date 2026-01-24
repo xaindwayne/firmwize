@@ -131,6 +131,11 @@ export default function UploadPage() {
         const { error: uploadError } = await supabase.storage.from('knowledge-files').upload(filePath, file);
         if (uploadError) throw uploadError;
 
+        // Set initial document_status based on manual approval setting
+        // If manual approval is off, we'll set it to approved after processing
+        // If manual approval is on, it stays in_review until manually approved
+        const initialDocStatus = settings.require_manual_approval ? 'in_review' : 'draft';
+        
         const { data: docData, error: dbError } = await supabase.from('documents').insert({
           user_id: user.id,
           title: formData.title || file.name,
@@ -145,7 +150,7 @@ export default function UploadPage() {
           notes: formData.notes || null,
           status: 'Processing',
           processing_status: 'pending',
-          document_status: 'draft',
+          document_status: initialDocStatus,
         }).select('id').single();
 
         if (dbError) throw dbError;
