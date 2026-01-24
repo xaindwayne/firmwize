@@ -168,18 +168,28 @@ export default function DocumentReview() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, { class: string; icon: React.ReactNode }> = {
-      approved: { class: 'bg-success/10 text-success border-success/20', icon: <CheckCircle2 className="h-3 w-3" /> },
-      in_review: { class: 'bg-warning/10 text-warning border-warning/20', icon: <Clock className="h-3 w-3" /> },
-      draft: { class: 'bg-muted text-muted-foreground', icon: <FileText className="h-3 w-3" /> },
-      deprecated: { class: 'bg-destructive/10 text-destructive border-destructive/20', icon: <XCircle className="h-3 w-3" /> },
+  const getStatusBadge = (status: string, processingStatus: string) => {
+    // If processing is completed and document is draft, show as "Ready to Go Live"
+    if (processingStatus === 'completed' && (status === 'draft' || status === 'in_review')) {
+      return (
+        <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 gap-1">
+          <Clock className="h-3 w-3" />
+          Ready to Go Live
+        </Badge>
+      );
+    }
+    
+    const styles: Record<string, { class: string; icon: React.ReactNode; label: string }> = {
+      approved: { class: 'bg-success/10 text-success border-success/20', icon: <CheckCircle2 className="h-3 w-3" />, label: 'Live' },
+      in_review: { class: 'bg-warning/10 text-warning border-warning/20', icon: <Clock className="h-3 w-3" />, label: 'Pending Review' },
+      draft: { class: 'bg-muted text-muted-foreground', icon: <FileText className="h-3 w-3" />, label: 'Draft' },
+      deprecated: { class: 'bg-destructive/10 text-destructive border-destructive/20', icon: <XCircle className="h-3 w-3" />, label: 'Rejected' },
     };
     const style = styles[status] || styles.draft;
     return (
       <Badge variant="outline" className={`${style.class} gap-1`}>
         {style.icon}
-        {status === 'in_review' ? 'Pending Review' : status === 'approved' ? 'Live' : status}
+        {style.label}
       </Badge>
     );
   };
@@ -203,12 +213,18 @@ export default function DocumentReview() {
     return <Badge variant="outline" className="bg-muted text-muted-foreground">Pending</Badge>;
   };
 
+  // Documents that can be made live: in_review OR draft with completed processing
+  const canGoLive = (d: Document) => 
+    (d.document_status === 'in_review' || d.document_status === 'draft') && 
+    d.processing_status === 'completed';
+
   const filteredDocs = documents.filter((d) => {
     const matchesSearch = d.title.toLowerCase().includes(search.toLowerCase()) ||
       d.filename.toLowerCase().includes(search.toLowerCase());
     
     if (activeTab === 'pending') {
-      return matchesSearch && d.document_status === 'in_review';
+      // Show documents that need review (in_review status OR draft with completed processing)
+      return matchesSearch && (d.document_status === 'in_review' || (d.document_status === 'draft' && d.processing_status === 'completed'));
     }
     if (activeTab === 'live') {
       return matchesSearch && d.document_status === 'approved';
@@ -219,7 +235,11 @@ export default function DocumentReview() {
     return matchesSearch;
   });
 
-  const pendingCount = documents.filter(d => d.document_status === 'in_review').length;
+  // Count pending as both in_review AND draft with completed processing
+  const pendingCount = documents.filter(d => 
+    d.document_status === 'in_review' || 
+    (d.document_status === 'draft' && d.processing_status === 'completed')
+  ).length;
   const liveCount = documents.filter(d => d.document_status === 'approved').length;
   const failedCount = documents.filter(d => d.processing_status === 'failed' || d.document_status === 'deprecated').length;
 
@@ -359,7 +379,7 @@ export default function DocumentReview() {
                         </div>
                       </TableCell>
                       <TableCell>{doc.department}</TableCell>
-                      <TableCell>{getStatusBadge(doc.document_status)}</TableCell>
+                      <TableCell>{getStatusBadge(doc.document_status, doc.processing_status)}</TableCell>
                       <TableCell>{getProcessingBadge(doc.processing_status, doc.processing_error)}</TableCell>
                       <TableCell>
                         {doc.chunk_count > 0 ? (
@@ -383,12 +403,13 @@ export default function DocumentReview() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {doc.document_status === 'in_review' && doc.processing_status === 'completed' && (
+                          {/* Show Go Live button for any document with completed processing that isn't already approved */}
+                          {doc.processing_status === 'completed' && doc.document_status !== 'approved' && doc.document_status !== 'deprecated' && (
                             <>
                               <Button
-                                variant="outline"
+                                variant="default"
                                 size="sm"
-                                className="text-success hover:text-success"
+                                className="bg-success hover:bg-success/90 text-success-foreground"
                                 onClick={() => handleApprove(doc.id)}
                                 disabled={actionLoading === doc.id}
                               >
@@ -466,7 +487,7 @@ export default function DocumentReview() {
             
             <div className="grid gap-4 py-4">
               <div className="flex items-center gap-4">
-                {selectedDoc && getStatusBadge(selectedDoc.document_status)}
+                {selectedDoc && getStatusBadge(selectedDoc.document_status, selectedDoc.processing_status)}
                 {selectedDoc && getProcessingBadge(selectedDoc.processing_status, selectedDoc.processing_error)}
                 {selectedDoc?.chunk_count && selectedDoc.chunk_count > 0 && (
                   <Badge variant="outline">{selectedDoc.chunk_count} indexed chunks</Badge>
