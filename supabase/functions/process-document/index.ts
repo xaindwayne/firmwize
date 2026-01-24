@@ -156,12 +156,13 @@ ${contentText}
       const requireManualApproval = settings?.require_manual_approval ?? false;
 
       // Update document with extracted content and status
+      // NOTE: status must be one of: 'Uploaded', 'Indexing', 'Ready', 'Failed' (per check constraint)
       const updateData: Record<string, any> = {
         content_text: enrichedContent,
         processing_status: "completed",
         processed_at: new Date().toISOString(),
         chunk_count: chunkCount,
-        status: "Indexed",
+        status: "Ready", // Use 'Ready' instead of 'Indexed' to match check constraint
       };
 
       // Auto-approve if manual approval is not required
@@ -171,18 +172,24 @@ ${contentText}
         updateData.document_status = "in_review";
       }
 
-      await supabase
+      const { error: updateError } = await supabase
         .from("documents")
         .update(updateData)
         .eq("id", documentId);
 
-      // Log activity
+      if (updateError) {
+        console.error("Failed to update document:", updateError);
+        throw new Error(`Failed to update document: ${updateError.message}`);
+      }
+
+      // Log activity - use 'Upload' action as it's allowed by check constraint
+      // (activity_logs.action must be: Upload, Rename, Recategorize, Version Update, Deprecate, Delete, Settings Change)
       await supabase.from("activity_logs").insert({
         user_id: user.id,
-        action: "Document Processed",
+        action: "Upload",
         document_id: documentId,
         document_title: doc.title,
-        details: `Extracted ${enrichedContent.length} characters, ${chunkCount} chunks. Status: ${updateData.document_status}`,
+        details: `Processed: ${enrichedContent.length} chars, ${chunkCount} chunks. Status: ${updateData.document_status}`,
         result: "Success",
       });
 
