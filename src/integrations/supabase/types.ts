@@ -215,6 +215,7 @@ export type Database = {
           departments: string[] | null
           id: string
           refuse_without_sources: boolean | null
+          require_manual_approval: boolean | null
           show_sources_in_answers: boolean | null
           updated_at: string
           user_id: string
@@ -226,6 +227,7 @@ export type Database = {
           departments?: string[] | null
           id?: string
           refuse_without_sources?: boolean | null
+          require_manual_approval?: boolean | null
           show_sources_in_answers?: boolean | null
           updated_at?: string
           user_id: string
@@ -237,6 +239,7 @@ export type Database = {
           departments?: string[] | null
           id?: string
           refuse_without_sources?: boolean | null
+          require_manual_approval?: boolean | null
           show_sources_in_answers?: boolean | null
           updated_at?: string
           user_id?: string
@@ -288,6 +291,7 @@ export type Database = {
         Row: {
           ai_enabled: boolean | null
           category_id: string | null
+          chunk_count: number | null
           content_text: string | null
           created_at: string
           current_version: number | null
@@ -304,6 +308,9 @@ export type Database = {
           last_reviewed_at: string | null
           last_reviewed_by: string | null
           notes: string | null
+          processed_at: string | null
+          processing_error: string | null
+          processing_status: string | null
           questions_answered: string | null
           region: string | null
           role_relevance: string[] | null
@@ -319,6 +326,7 @@ export type Database = {
         Insert: {
           ai_enabled?: boolean | null
           category_id?: string | null
+          chunk_count?: number | null
           content_text?: string | null
           created_at?: string
           current_version?: number | null
@@ -337,6 +345,9 @@ export type Database = {
           last_reviewed_at?: string | null
           last_reviewed_by?: string | null
           notes?: string | null
+          processed_at?: string | null
+          processing_error?: string | null
+          processing_status?: string | null
           questions_answered?: string | null
           region?: string | null
           role_relevance?: string[] | null
@@ -352,6 +363,7 @@ export type Database = {
         Update: {
           ai_enabled?: boolean | null
           category_id?: string | null
+          chunk_count?: number | null
           content_text?: string | null
           created_at?: string
           current_version?: number | null
@@ -370,6 +382,9 @@ export type Database = {
           last_reviewed_at?: string | null
           last_reviewed_by?: string | null
           notes?: string | null
+          processed_at?: string | null
+          processing_error?: string | null
+          processing_status?: string | null
           questions_answered?: string | null
           region?: string | null
           role_relevance?: string[] | null

@@ -2,3 +2,6 @@ project_id = "kkmbahdqrjarlrnhustu"
 
 [functions.ai-chat]
 verify_jwt = false
+
+[functions.process-document]
+verify_jwt = false
