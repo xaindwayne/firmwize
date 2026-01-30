@@ -17,7 +17,7 @@ export function PublicLayout({ children }: PublicLayoutProps) {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
               <Brain className="h-5 w-5" />
             </div>
-            <span className="text-lg font-semibold text-foreground">IntelliBase</span>
+            <span className="text-lg font-semibold text-foreground">Firmwize</span>
           </Link>
           
           <div className="flex items-center gap-4">
@@ -58,14 +58,14 @@ export function PublicLayout({ children }: PublicLayoutProps) {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                 <Brain className="h-4 w-4" />
               </div>
-              <span className="font-semibold text-foreground">IntelliBase</span>
+              <span className="font-semibold text-foreground">Firmwize</span>
             </div>
             
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <Link to="/services" className="hover:text-foreground transition-colors">Services</Link>
               <Link to="/about" className="hover:text-foreground transition-colors">About</Link>
               <Link to="/booking" className="hover:text-foreground transition-colors">Contact</Link>
-              <span>© {new Date().getFullYear()} IntelliBase. All rights reserved.</span>
+              <span>© {new Date().getFullYear()} Firmwize. All rights reserved.</span>
             </div>
           </div>
         </div>

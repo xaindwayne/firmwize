@@ -69,7 +69,7 @@ export default function About() {
               Making organizational knowledge accessible
             </h1>
             <p className="mt-6 text-lg text-muted-foreground">
-              IntelliBase helps companies transform their scattered documents, policies, and procedures 
+              Firmwize helps companies transform their scattered documents, policies, and procedures 
               into an intelligent, searchable knowledge base that employees can query in natural language.
             </p>
           </div>
@@ -95,7 +95,7 @@ export default function About() {
                 they need. Critical knowledge walks out the door when people leave.
               </p>
               <p>
-                <strong className="text-foreground">IntelliBase changes this.</strong> By centralizing your organization's 
+                <strong className="text-foreground">Firmwize changes this.</strong> By centralizing your organization's 
                 knowledge and making it queryable through an AI assistant, we help teams find 
                 answers in seconds instead of hours.
               </p>
@@ -173,7 +173,7 @@ export default function About() {
               Ready to get started?
             </h2>
             <p className="mt-4 text-muted-foreground">
-              Schedule a free consultation to see how IntelliBase can work for your organization.
+              Schedule a free consultation to see how Firmwize can work for your organization.
             </p>
             <div className="mt-8">
               <Link to="/booking">

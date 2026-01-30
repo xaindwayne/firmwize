@@ -81,7 +81,7 @@ function AdminSidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-foreground">
             <Brain className="h-4 w-4" />
           </div>
-          <span className="font-semibold text-foreground">IntelliBase</span>
+          <span className="font-semibold text-foreground">Firmwize</span>
         </Link>
       </SidebarHeader>
       

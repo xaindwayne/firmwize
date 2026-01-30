@@ -115,7 +115,7 @@ export default function Login() {
       return;
     }
 
-    toast.success('Account created! Welcome to IntelliBase.');
+    toast.success('Account created! Welcome to Firmwize.');
     navigate('/admin');
   };
 
@@ -138,7 +138,7 @@ export default function Login() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
                 <Brain className="h-5 w-5" />
               </div>
-              <span className="text-xl font-semibold text-foreground">IntelliBase</span>
+              <span className="text-xl font-semibold text-foreground">Firmwize</span>
             </Link>
           </div>
 
