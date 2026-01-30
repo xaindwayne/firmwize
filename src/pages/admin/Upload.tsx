@@ -148,7 +148,7 @@ export default function UploadPage() {
           region: formData.region || null,
           sensitivity: formData.sensitivity,
           notes: formData.notes || null,
-          status: 'Processing',
+          status: 'Uploaded',
           processing_status: 'pending',
           document_status: initialDocStatus,
         }).select('id').single();
