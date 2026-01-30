@@ -112,7 +112,7 @@ export default function Booking() {
                   Book a free meeting
                 </h1>
                 <p className="mt-4 text-lg text-muted-foreground">
-                  Schedule a consultation to see how IntelliBase can transform your organization's 
+                  Schedule a consultation to see how Firmwize can transform your organization's 
                   knowledge management.
                 </p>
 

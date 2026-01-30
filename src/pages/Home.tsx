@@ -50,7 +50,7 @@ const capabilities = [
 
 const testimonials = [
   {
-    quote: "IntelliBase transformed how our team accesses information. What used to take hours of searching now takes seconds.",
+    quote: "Firmwize transformed how our team accesses information. What used to take hours of searching now takes seconds.",
     author: "Sarah Chen",
     role: "Head of Operations",
     company: "TechCorp Inc.",
@@ -223,7 +223,7 @@ export default function Home() {
               Ready to unlock your organization's knowledge?
             </h2>
             <p className="mt-4 text-accent-foreground/80">
-              Schedule a free consultation to see how IntelliBase can transform your team's productivity.
+              Schedule a free consultation to see how Firmwize can transform your team's productivity.
             </p>
             <div className="mt-8">
               <Link to="/booking">
