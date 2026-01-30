@@ -82,8 +82,7 @@ export default function Home() {
               <span className="text-accent">impossible to ignore</span>
             </h1>
             <p className="animate-slide-up mt-6 text-lg text-muted-foreground md:text-xl">
-              Transform scattered documents into intelligent, searchable knowledge. 
-              Help your team find answers in seconds, not hours.
+              We centralize your organization's knowledge into a secure AI that enables faster decisions, stronger collaboration, and consistent execution.
             </p>
             <div className="animate-slide-up mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link to="/booking">
