@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const AI_MODEL = "openai/gpt-5";
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const OPENAI_EMBEDDING_URL = "https://api.openai.com/v1/embeddings";
+const EMBEDDING_MODEL = "text-embedding-3-small";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,13 +17,13 @@ interface ChatMessage {
   content: string;
 }
 
-interface RetrievedDoc {
+interface VectorSearchResult {
   id: string;
-  title: string;
+  document_id: string;
+  chunk_text: string;
+  similarity: number;
+  document_title: string;
   department: string | null;
-  knowledge_type: string | null;
-  rank: number;
-  excerpt: string;
 }
 
 function clampInt(value: unknown, min: number, max: number, fallback: number) {
@@ -30,32 +32,28 @@ function clampInt(value: unknown, min: number, max: number, fallback: number) {
   return Math.min(Math.max(Math.floor(n), min), max);
 }
 
-function truncate(text: string, maxChars: number) {
-  if (text.length <= maxChars) return text;
-  return text.slice(0, Math.max(0, maxChars - 1)).trimEnd() + "…";
-}
+// Generate query embedding using OpenAI
+async function generateQueryEmbedding(text: string, apiKey: string): Promise<number[]> {
+  const response = await fetch(OPENAI_EMBEDDING_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: text,
+    }),
+  });
 
-function buildDocumentContext(docs: RetrievedDoc[], maxChars: number) {
-  let out = "\n\n---\n\n## RETRIEVED DOCUMENT EXCERPTS:\n\n";
-  let used = out.length;
-
-  for (const doc of docs) {
-    const headerLines: string[] = [];
-    headerLines.push(`### Document: "${doc.title}"`);
-    if (doc.department) headerLines.push(`Department: ${doc.department}`);
-
-    const header = headerLines.join("\n") + "\n\nContent excerpt:\n";
-    // Use a larger excerpt - up to 2500 chars per document
-    const excerpt = truncate((doc.excerpt || "").trim().replace(/<\/?b>/g, ''), 2500) + "\n\n---\n\n";
-
-    const next = header + excerpt;
-    if (used + next.length > maxChars) break;
-
-    out += next;
-    used += next.length;
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`OpenAI embedding error: ${response.status} - ${errorText}`);
+    throw new Error(`Query embedding failed: ${response.status}`);
   }
 
-  return out;
+  const result = await response.json();
+  return result.data[0].embedding;
 }
 
 serve(async (req) => {
@@ -73,6 +71,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(JSON.stringify({ error: "Supabase not configured." }), {
@@ -133,71 +132,125 @@ serve(async (req) => {
     const companyName = settings?.company_name || "your organization";
     const showSources = settings?.show_sources_in_answers ?? true;
 
-    // Server-side ranked retrieval (fast + accurate)
-    console.log(`[AI-CHAT] Searching documents for user: ${user.id}, query: "${userQuestion.substring(0, 50)}..."`);
-    
-    const { data: docs, error: docsError } = await supabase.rpc("search_user_documents", {
-      p_user_id: user.id,
-      p_query: userQuestion,
-      p_limit: topK,
-    });
+    let relevantChunks: VectorSearchResult[] = [];
+    let usedVectorSearch = false;
 
-    if (docsError) {
-      console.error("[AI-CHAT] search_user_documents error:", docsError);
-    }
-    
-    console.log(`[AI-CHAT] Found ${docs?.length || 0} documents`);
-
-    const relevantDocs: RetrievedDoc[] = Array.isArray(docs) ? (docs as RetrievedDoc[]) : [];
-
-    // Fetch full content for matched documents (up to 3)
-    let documentContext = "\n\nNote: No relevant documents were found for this question.\n";
-    
-    if (relevantDocs.length > 0) {
-      const docIds = relevantDocs.slice(0, 3).map(d => d.id);
-      const { data: fullDocs } = await supabase
-        .from("documents")
-        .select("id, title, department, content_text")
-        .in("id", docIds);
-      
-      if (fullDocs && fullDocs.length > 0) {
-        documentContext = "\n\n---\n\n## DOCUMENT CONTENT:\n\n";
-        let totalChars = documentContext.length;
-        const maxTotal = 15000;
+    // Try vector similarity search first (if OpenAI API key is available)
+    if (OPENAI_API_KEY) {
+      try {
+        console.log(`[AI-CHAT] Generating query embedding for: "${userQuestion.substring(0, 50)}..."`);
         
-        for (const doc of fullDocs) {
-          const content = doc.content_text || "";
-          // Truncate individual docs to ~5000 chars if needed
-          const truncatedContent = content.length > 5000 
-            ? content.substring(0, 5000) + "... [content truncated]"
-            : content;
-          
-          const docSection = `### Document: "${doc.title}"\nDepartment: ${doc.department || "General"}\n\n${truncatedContent}\n\n---\n\n`;
-          
-          if (totalChars + docSection.length > maxTotal) {
-            console.log(`[AI-CHAT] Stopping at ${totalChars} chars (would exceed max)`);
-            break;
+        const queryEmbedding = await generateQueryEmbedding(userQuestion, OPENAI_API_KEY);
+        const embeddingStr = `[${queryEmbedding.join(",")}]`;
+        
+        console.log(`[AI-CHAT] Searching embeddings for user: ${user.id}`);
+        
+        const { data: vectorResults, error: vectorError } = await supabase.rpc(
+          "search_document_embeddings",
+          {
+            p_user_id: user.id,
+            p_query_embedding: embeddingStr,
+            p_match_count: topK,
+            p_match_threshold: 0.5, // Lower threshold for more results
           }
-          
-          documentContext += docSection;
-          totalChars += docSection.length;
+        );
+
+        if (vectorError) {
+          console.error("[AI-CHAT] Vector search error:", vectorError);
+        } else if (vectorResults && vectorResults.length > 0) {
+          relevantChunks = vectorResults as VectorSearchResult[];
+          usedVectorSearch = true;
+          console.log(`[AI-CHAT] Vector search found ${relevantChunks.length} chunks`);
         }
-        
-        console.log(`[AI-CHAT] Full document context: ${totalChars} chars`);
+      } catch (embeddingError) {
+        console.error("[AI-CHAT] Embedding/vector search failed:", embeddingError);
       }
     }
 
-    console.log(`[AI-CHAT] Document context length: ${documentContext.length} chars`);
+    // Fallback to FTS if vector search didn't find results
+    if (relevantChunks.length === 0) {
+      console.log(`[AI-CHAT] Falling back to FTS for: "${userQuestion.substring(0, 50)}..."`);
+      
+      const { data: ftsResults, error: ftsError } = await supabase.rpc("search_user_documents", {
+        p_user_id: user.id,
+        p_query: userQuestion,
+        p_limit: topK,
+      });
+
+      if (ftsError) {
+        console.error("[AI-CHAT] FTS search error:", ftsError);
+      } else if (ftsResults && ftsResults.length > 0) {
+        // Convert FTS results to similar format
+        relevantChunks = ftsResults.map((doc: { id: string; title: string; department: string; excerpt: string; rank: number }) => ({
+          id: doc.id,
+          document_id: doc.id,
+          chunk_text: doc.excerpt || "",
+          similarity: doc.rank,
+          document_title: doc.title,
+          department: doc.department,
+        }));
+        console.log(`[AI-CHAT] FTS found ${relevantChunks.length} documents`);
+      }
+    }
+
+    console.log(`[AI-CHAT] Total results: ${relevantChunks.length} (vector: ${usedVectorSearch})`);
+
+    // Build document context from chunks
+    let documentContext = "\n\nNote: No relevant documents were found for this question.\n";
+    const sourceDocuments: Map<string, { title: string; department: string | null }> = new Map();
+    
+    if (relevantChunks.length > 0) {
+      documentContext = "\n\n---\n\n## RELEVANT DOCUMENT CONTENT:\n\n";
+      let totalChars = documentContext.length;
+      const maxTotal = 15000;
+      
+      // Group chunks by document
+      const chunksByDoc = new Map<string, { chunks: string[]; title: string; department: string | null }>();
+      
+      for (const chunk of relevantChunks) {
+        const docId = chunk.document_id;
+        if (!chunksByDoc.has(docId)) {
+          chunksByDoc.set(docId, {
+            chunks: [],
+            title: chunk.document_title,
+            department: chunk.department,
+          });
+        }
+        chunksByDoc.get(docId)!.chunks.push(chunk.chunk_text);
+        sourceDocuments.set(docId, { title: chunk.document_title, department: chunk.department });
+      }
+      
+      // Build context with document sections
+      for (const [docId, docData] of chunksByDoc) {
+        const combinedContent = docData.chunks.join("\n\n");
+        const docSection = `### Document: "${docData.title}"\nDepartment: ${docData.department || "General"}\n\n${combinedContent}\n\n---\n\n`;
+        
+        if (totalChars + docSection.length > maxTotal) {
+          // Truncate this section if needed
+          const remaining = maxTotal - totalChars - 100;
+          if (remaining > 200) {
+            documentContext += `### Document: "${docData.title}"\nDepartment: ${docData.department || "General"}\n\n${combinedContent.substring(0, remaining)}... [truncated]\n\n---\n\n`;
+          }
+          break;
+        }
+        
+        documentContext += docSection;
+        totalChars += docSection.length;
+      }
+      
+      console.log(`[AI-CHAT] Document context: ${totalChars} chars from ${chunksByDoc.size} documents`);
+    }
 
     const systemPrompt = `You are a helpful AI assistant for ${companyName}. Your job is to answer questions based on the company's knowledge base documents.
 
-IMPORTANT: Document excerpts are provided below. Use this information to answer the user's question.
+IMPORTANT: Relevant document content is provided below. Use this information to answer the user's question.
 
 Instructions:
-1. If the excerpts contain relevant information, provide a clear, helpful answer based on that information.
+1. If the content contains relevant information, provide a clear, helpful answer based on that information.
 2. Cite the document title when referencing information (e.g., "According to [Document Title]...").
-3. If the excerpts don't contain information relevant to the question, say: "I don't see anything in the uploaded documents that addresses this. Could you try rephrasing, or is there a specific document you'd like me to check?"
+3. If the content doesn't address the question, say: "I don't see anything in the uploaded documents that addresses this. Could you try rephrasing, or is there a specific document you'd like me to check?"
 4. Be direct and confident in your answers - don't be overly cautious if the information is there.
+5. Synthesize information from multiple documents when relevant.
 
 ${documentContext}`;
 
@@ -249,16 +302,15 @@ ${documentContext}`;
       "I apologize, but I couldn't generate a response. Please try again.";
 
     const sourcesForResponse =
-      showSources && relevantDocs.length > 0
-        ? relevantDocs.map((d) => ({
-            id: d.id,
-            title: d.title,
-            department: d.department,
-            type: d.knowledge_type,
+      showSources && sourceDocuments.size > 0
+        ? Array.from(sourceDocuments.entries()).map(([id, doc]) => ({
+            id,
+            title: doc.title,
+            department: doc.department,
           }))
         : [];
 
-    const hasNoSource = relevantDocs.length === 0;
+    const hasNoSource = relevantChunks.length === 0;
 
     if (body.conversationId) {
       await supabase.from("chat_messages").insert([
@@ -277,6 +329,7 @@ ${documentContext}`;
         content: assistantMessage,
         sources: sourcesForResponse,
         hasNoSource,
+        searchMethod: usedVectorSearch ? "vector" : "fts",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
