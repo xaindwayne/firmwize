@@ -1,10 +1,163 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import JSZip from "https://esm.sh/jszip@3.10.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Extract text from XML content (removes tags, decodes entities)
+function extractTextFromXml(xml: string): string {
+  // Remove XML declaration and processing instructions
+  let text = xml.replace(/<\?[^?]*\?>/g, "");
+  
+  // Decode common XML entities
+  const entities: Record<string, string> = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&apos;": "'",
+    "&#39;": "'",
+    "&#x27;": "'",
+  };
+  
+  for (const [entity, char] of Object.entries(entities)) {
+    text = text.split(entity).join(char);
+  }
+  
+  // Extract text between tags, focusing on text content elements
+  const textMatches: string[] = [];
+  
+  // Match text content in common Office XML elements
+  const patterns = [
+    /<w:t[^>]*>([^<]*)<\/w:t>/gi,      // Word paragraphs
+    /<a:t[^>]*>([^<]*)<\/a:t>/gi,      // PowerPoint text
+    /<t[^>]*>([^<]*)<\/t>/gi,          // Excel cells
+    /<si><t>([^<]*)<\/t><\/si>/gi,     // Excel shared strings
+    /<v>([^<]*)<\/v>/gi,               // Excel values
+  ];
+  
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const content = match[1]?.trim();
+      if (content && content.length > 0) {
+        textMatches.push(content);
+      }
+    }
+  }
+  
+  return textMatches.join(" ").replace(/\s+/g, " ").trim();
+}
+
+// Extract text from DOCX files
+async function extractDocxText(zip: JSZip): Promise<string> {
+  const texts: string[] = [];
+  
+  // Main document content
+  const docFile = zip.file("word/document.xml");
+  if (docFile) {
+    const content = await docFile.async("string");
+    const extracted = extractTextFromXml(content);
+    if (extracted) texts.push(extracted);
+  }
+  
+  // Headers and footers
+  for (const filename of Object.keys(zip.files)) {
+    if (filename.match(/word\/(header|footer)\d*\.xml/)) {
+      const file = zip.file(filename);
+      if (file) {
+        const content = await file.async("string");
+        const extracted = extractTextFromXml(content);
+        if (extracted) texts.push(extracted);
+      }
+    }
+  }
+  
+  return texts.join("\n\n");
+}
+
+// Extract text from PPTX files
+async function extractPptxText(zip: JSZip): Promise<string> {
+  const slides: string[] = [];
+  
+  // Get all slide files and sort them
+  const slideFiles = Object.keys(zip.files)
+    .filter(f => f.match(/ppt\/slides\/slide\d+\.xml/))
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/slide(\d+)/)?.[1] || "0");
+      const numB = parseInt(b.match(/slide(\d+)/)?.[1] || "0");
+      return numA - numB;
+    });
+  
+  for (const filename of slideFiles) {
+    const file = zip.file(filename);
+    if (file) {
+      const content = await file.async("string");
+      const extracted = extractTextFromXml(content);
+      if (extracted) {
+        const slideNum = filename.match(/slide(\d+)/)?.[1] || "?";
+        slides.push(`[Slide ${slideNum}] ${extracted}`);
+      }
+    }
+  }
+  
+  // Also extract from notes
+  const noteFiles = Object.keys(zip.files)
+    .filter(f => f.match(/ppt\/notesSlides\/notesSlide\d+\.xml/));
+  
+  for (const filename of noteFiles) {
+    const file = zip.file(filename);
+    if (file) {
+      const content = await file.async("string");
+      const extracted = extractTextFromXml(content);
+      if (extracted) {
+        slides.push(`[Notes] ${extracted}`);
+      }
+    }
+  }
+  
+  return slides.join("\n\n");
+}
+
+// Extract text from XLSX files
+async function extractXlsxText(zip: JSZip): Promise<string> {
+  const texts: string[] = [];
+  
+  // Shared strings (contains most text content)
+  const sharedStringsFile = zip.file("xl/sharedStrings.xml");
+  if (sharedStringsFile) {
+    const content = await sharedStringsFile.async("string");
+    const extracted = extractTextFromXml(content);
+    if (extracted) texts.push(extracted);
+  }
+  
+  // Sheet data
+  const sheetFiles = Object.keys(zip.files)
+    .filter(f => f.match(/xl\/worksheets\/sheet\d+\.xml/))
+    .sort();
+  
+  for (const filename of sheetFiles) {
+    const file = zip.file(filename);
+    if (file) {
+      const content = await file.async("string");
+      // Extract inline strings and values
+      const inlineMatches: string[] = [];
+      const inlinePattern = /<is><t>([^<]*)<\/t><\/is>/gi;
+      let match;
+      while ((match = inlinePattern.exec(content)) !== null) {
+        if (match[1]?.trim()) inlineMatches.push(match[1].trim());
+      }
+      if (inlineMatches.length > 0) {
+        texts.push(inlineMatches.join(" "));
+      }
+    }
+  }
+  
+  return texts.join("\n\n");
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -61,7 +214,7 @@ serve(async (req) => {
     // Update processing status
     await supabase
       .from("documents")
-      .update({ processing_status: "processing" })
+      .update({ processing_status: "processing", status: "Indexing" })
       .eq("id", documentId);
 
     console.log(`Processing document: ${doc.title} (${doc.file_path})`);
@@ -80,64 +233,94 @@ serve(async (req) => {
       // Extract text based on file type
       let contentText = "";
       const fileType = doc.file_type || "";
+      const filename = (doc.filename || "").toLowerCase();
 
-      if (fileType === "text/plain" || fileType === "text/csv") {
+      console.log(`File type: ${fileType}, Filename: ${filename}`);
+
+      if (fileType === "text/plain" || filename.endsWith(".txt")) {
         // Plain text files
         contentText = await fileData.text();
-      } else if (fileType === "application/pdf") {
-        // For PDFs, extract what we can (basic extraction)
-        // In production, you'd use a proper PDF parser
+        console.log(`Extracted ${contentText.length} chars from plain text`);
+        
+      } else if (fileType === "text/csv" || filename.endsWith(".csv")) {
+        // CSV files
+        contentText = await fileData.text();
+        console.log(`Extracted ${contentText.length} chars from CSV`);
+        
+      } else if (fileType === "application/pdf" || filename.endsWith(".pdf")) {
+        // For PDFs, extract readable text
         const arrayBuffer = await fileData.arrayBuffer();
         const uint8Array = new Uint8Array(arrayBuffer);
-        
-        // Simple text extraction - look for text streams
-        let text = "";
         const decoder = new TextDecoder("utf-8", { fatal: false });
         const rawText = decoder.decode(uint8Array);
         
         // Extract readable ASCII text portions
         const readablePattern = /[\x20-\x7E\n\r\t]+/g;
         const matches = rawText.match(readablePattern) || [];
-        text = matches
-          .filter(m => m.length > 20) // Filter out short fragments
+        contentText = matches
+          .filter(m => m.length > 20)
           .join(" ")
           .replace(/\s+/g, " ")
           .trim();
         
-        contentText = text || `[PDF document: ${doc.title}] - Content indexed for search`;
-      } else if (
-        fileType.includes("wordprocessingml") ||
-        fileType.includes("spreadsheetml") ||
-        fileType.includes("presentationml")
-      ) {
-        // Office documents - extract what we can
-        const arrayBuffer = await fileData.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        const decoder = new TextDecoder("utf-8", { fatal: false });
-        const rawText = decoder.decode(uint8Array);
-        
-        // Extract XML text content
-        const textPattern = /<[^>]*>([^<]+)<\/[^>]*>/g;
-        const matches = [];
-        let match;
-        while ((match = textPattern.exec(rawText)) !== null) {
-          if (match[1] && match[1].trim().length > 3) {
-            matches.push(match[1].trim());
-          }
+        if (!contentText || contentText.length < 50) {
+          contentText = `[PDF document: ${doc.title}] - This PDF may contain scanned images. Text extraction limited.`;
         }
+        console.log(`Extracted ${contentText.length} chars from PDF`);
         
-        contentText = matches.join(" ").replace(/\s+/g, " ").trim() || 
-          `[${doc.file_type} document: ${doc.title}] - Content indexed for search`;
+      } else if (
+        fileType.includes("wordprocessingml") || 
+        filename.endsWith(".docx")
+      ) {
+        // DOCX files
+        const arrayBuffer = await fileData.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        contentText = await extractDocxText(zip);
+        console.log(`Extracted ${contentText.length} chars from DOCX`);
+        
+      } else if (
+        fileType.includes("presentationml") || 
+        filename.endsWith(".pptx")
+      ) {
+        // PPTX files
+        const arrayBuffer = await fileData.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        contentText = await extractPptxText(zip);
+        console.log(`Extracted ${contentText.length} chars from PPTX`);
+        
+      } else if (
+        fileType.includes("spreadsheetml") || 
+        filename.endsWith(".xlsx")
+      ) {
+        // XLSX files
+        const arrayBuffer = await fileData.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        contentText = await extractXlsxText(zip);
+        console.log(`Extracted ${contentText.length} chars from XLSX`);
+        
       } else {
-        contentText = `[Document: ${doc.title}] - File type: ${fileType}`;
+        // Unknown file type - try as text
+        try {
+          contentText = await fileData.text();
+          if (contentText.includes("\0") || contentText.length < 10) {
+            contentText = `[Document: ${doc.title}] - File type: ${fileType}. Unable to extract text content.`;
+          }
+        } catch {
+          contentText = `[Document: ${doc.title}] - File type: ${fileType}. Unable to extract text content.`;
+        }
+        console.log(`Fallback extraction: ${contentText.length} chars`);
+      }
+
+      // Ensure we have some content
+      if (!contentText || contentText.trim().length === 0) {
+        contentText = `[Document: ${doc.title}] - No text content could be extracted from this file.`;
       }
 
       // Add document metadata to help with search
       const enrichedContent = `
 Title: ${doc.title}
 Department: ${doc.department || "General"}
-Category: ${doc.category_id || "Uncategorized"}
-Notes: ${doc.notes || ""}
+${doc.notes ? `Notes: ${doc.notes}` : ""}
 
 Content:
 ${contentText}
@@ -156,13 +339,12 @@ ${contentText}
       const requireManualApproval = settings?.require_manual_approval ?? false;
 
       // Update document with extracted content and status
-      // NOTE: status must be one of: 'Uploaded', 'Indexing', 'Ready', 'Failed' (per check constraint)
-      const updateData: Record<string, any> = {
+      const updateData: Record<string, unknown> = {
         content_text: enrichedContent,
         processing_status: "completed",
         processed_at: new Date().toISOString(),
         chunk_count: chunkCount,
-        status: "Ready", // Use 'Ready' instead of 'Indexed' to match check constraint
+        status: "Ready",
       };
 
       // Auto-approve if manual approval is not required
@@ -182,8 +364,7 @@ ${contentText}
         throw new Error(`Failed to update document: ${updateError.message}`);
       }
 
-      // Log activity - use 'Upload' action as it's allowed by check constraint
-      // (activity_logs.action must be: Upload, Rename, Recategorize, Version Update, Deprecate, Delete, Settings Change)
+      // Log activity
       await supabase.from("activity_logs").insert({
         user_id: user.id,
         action: "Upload",
@@ -193,7 +374,7 @@ ${contentText}
         result: "Success",
       });
 
-      console.log(`Document processed successfully: ${doc.title}`);
+      console.log(`Document processed successfully: ${doc.title} (${enrichedContent.length} chars)`);
 
       return new Response(
         JSON.stringify({
