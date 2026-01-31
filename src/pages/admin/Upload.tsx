@@ -115,6 +115,20 @@ export default function UploadPage() {
     }
   };
 
+  // Sanitize filename for Supabase Storage (remove emojis, special chars, spaces)
+  const sanitizeFilename = (filename: string): string => {
+    // Remove emojis and special unicode characters
+    const withoutEmojis = filename.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{231A}-\u{231B}\u{23E9}-\u{23F3}\u{23F8}-\u{23FA}\u{25AA}-\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2614}-\u{2615}\u{2648}-\u{2653}\u{267F}\u{2693}\u{26A1}\u{26AA}-\u{26AB}\u{26BD}-\u{26BE}\u{26C4}-\u{26C5}\u{26CE}\u{26D4}\u{26EA}\u{26F2}-\u{26F3}\u{26F5}\u{26FA}\u{26FD}\u{2702}\u{2705}\u{2708}-\u{270D}\u{270F}]/gu, '');
+    // Replace spaces and other problematic characters with underscores
+    const sanitized = withoutEmojis
+      .replace(/\s+/g, '_')           // Replace spaces with underscores
+      .replace(/[^\w\-_.]/g, '')      // Remove any remaining non-word chars except - _ .
+      .replace(/_+/g, '_')            // Replace multiple underscores with single
+      .replace(/^_|_$/g, '');         // Remove leading/trailing underscores
+    
+    return sanitized || 'document';   // Fallback if everything was removed
+  };
+
   const handleUpload = async () => {
     if (!user || files.length === 0) return;
     setUploading(true);
@@ -127,7 +141,8 @@ export default function UploadPage() {
         const file = files[i];
         setUploadProgress(Math.round(((i) / files.length) * 100));
 
-        const filePath = `${user.id}/${Date.now()}_${file.name}`;
+        const sanitizedFilename = sanitizeFilename(file.name);
+        const filePath = `${user.id}/${Date.now()}_${sanitizedFilename}`;
         const { error: uploadError } = await supabase.storage.from('knowledge-files').upload(filePath, file);
         if (uploadError) throw uploadError;
 
