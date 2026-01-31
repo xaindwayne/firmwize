@@ -2,9 +2,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 // Model configuration - logged for transparency (not exposed to end users)
-const AI_MODEL = "gpt-4o";
-const AI_MODEL_VERSION = "2024-08-06";
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+// Using Lovable AI Gateway with OpenAI GPT-5 for ChatGPT-level quality
+const AI_MODEL = "openai/gpt-5";
+const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -155,8 +155,8 @@ serve(async (req) => {
   }
 
   // Log model info at startup for admin transparency
-  console.info(`[AI-CHAT] Model Configuration: ${AI_MODEL} (version: ${AI_MODEL_VERSION})`);
-  console.info(`[AI-CHAT] API Endpoint: OpenAI Direct (${OPENAI_API_URL})`);
+  console.info(`[AI-CHAT] Model Configuration: ${AI_MODEL}`);
+  console.info(`[AI-CHAT] API Endpoint: Lovable AI Gateway (${AI_GATEWAY_URL})`);
 
   try {
     const authHeader = req.headers.get("authorization");
@@ -273,11 +273,11 @@ serve(async (req) => {
 
 ${documentContext || "\nNote: No documents have been uploaded yet. Let the user know they need to upload documents first."}`;
 
-    // Check OpenAI API key
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) {
-      console.error("[AI-CHAT] OPENAI_API_KEY is not configured");
-      throw new Error("AI service not configured. Please add OPENAI_API_KEY.");
+    // Check Lovable AI API key
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) {
+      console.error("[AI-CHAT] LOVABLE_API_KEY is not configured");
+      throw new Error("AI service not configured.");
     }
 
     const aiMessages = [
@@ -285,13 +285,13 @@ ${documentContext || "\nNote: No documents have been uploaded yet. Let the user 
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    console.info(`[AI-CHAT] Calling OpenAI API with model: ${AI_MODEL}`);
+    console.info(`[AI-CHAT] Calling Lovable AI Gateway with model: ${AI_MODEL}`);
     const requestStartTime = Date.now();
 
-    const response = await fetch(OPENAI_API_URL, {
+    const response = await fetch(AI_GATEWAY_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -303,11 +303,11 @@ ${documentContext || "\nNote: No documents have been uploaded yet. Let the user 
     });
 
     const requestDuration = Date.now() - requestStartTime;
-    console.info(`[AI-CHAT] OpenAI API response received in ${requestDuration}ms`);
+    console.info(`[AI-CHAT] Lovable AI Gateway response received in ${requestDuration}ms`);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[AI-CHAT] OpenAI API error: ${response.status} - ${errorText}`);
+      console.error(`[AI-CHAT] Lovable AI Gateway error: ${response.status} - ${errorText}`);
       
       if (response.status === 429) {
         return new Response(
@@ -321,7 +321,7 @@ ${documentContext || "\nNote: No documents have been uploaded yet. Let the user 
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      throw new Error(`OpenAI API error: ${response.status}`);
+      throw new Error(`AI Gateway error: ${response.status}`);
     }
 
     const aiResponse = await response.json();
