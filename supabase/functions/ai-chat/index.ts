@@ -36,17 +36,17 @@ function truncate(text: string, maxChars: number) {
 }
 
 function buildDocumentContext(docs: RetrievedDoc[], maxChars: number) {
-  let out = "\n\n---\n\n## RETRIEVED DOCUMENT CONTENT:\n\n";
+  let out = "\n\n---\n\n## RETRIEVED DOCUMENT EXCERPTS:\n\n";
   let used = out.length;
 
   for (const doc of docs) {
     const headerLines: string[] = [];
     headerLines.push(`### Document: "${doc.title}"`);
     if (doc.department) headerLines.push(`Department: ${doc.department}`);
-    headerLines.push(`Relevance: ${doc.rank.toFixed(3)}`);
 
-    const header = headerLines.join("\n") + "\n\n";
-    const excerpt = truncate((doc.excerpt || "").trim(), 900) + "\n\n---\n\n";
+    const header = headerLines.join("\n") + "\n\nContent excerpt:\n";
+    // Use a larger excerpt - up to 2500 chars per document
+    const excerpt = truncate((doc.excerpt || "").trim().replace(/<\/?b>/g, ''), 2500) + "\n\n---\n\n";
 
     const next = header + excerpt;
     if (used + next.length > maxChars) break;
@@ -150,19 +150,54 @@ serve(async (req) => {
 
     const relevantDocs: RetrievedDoc[] = Array.isArray(docs) ? (docs as RetrievedDoc[]) : [];
 
-    const documentContext =
-      relevantDocs.length > 0
-        ? buildDocumentContext(relevantDocs, 9000)
-        : "\n\nNote: No relevant documents were found for this question.\n";
+    // Fetch full content for matched documents (up to 3)
+    let documentContext = "\n\nNote: No relevant documents were found for this question.\n";
+    
+    if (relevantDocs.length > 0) {
+      const docIds = relevantDocs.slice(0, 3).map(d => d.id);
+      const { data: fullDocs } = await supabase
+        .from("documents")
+        .select("id, title, department, content_text")
+        .in("id", docIds);
+      
+      if (fullDocs && fullDocs.length > 0) {
+        documentContext = "\n\n---\n\n## DOCUMENT CONTENT:\n\n";
+        let totalChars = documentContext.length;
+        const maxTotal = 15000;
+        
+        for (const doc of fullDocs) {
+          const content = doc.content_text || "";
+          // Truncate individual docs to ~5000 chars if needed
+          const truncatedContent = content.length > 5000 
+            ? content.substring(0, 5000) + "... [content truncated]"
+            : content;
+          
+          const docSection = `### Document: "${doc.title}"\nDepartment: ${doc.department || "General"}\n\n${truncatedContent}\n\n---\n\n`;
+          
+          if (totalChars + docSection.length > maxTotal) {
+            console.log(`[AI-CHAT] Stopping at ${totalChars} chars (would exceed max)`);
+            break;
+          }
+          
+          documentContext += docSection;
+          totalChars += docSection.length;
+        }
+        
+        console.log(`[AI-CHAT] Full document context: ${totalChars} chars`);
+      }
+    }
 
-    const systemPrompt = `You are an expert AI assistant for ${companyName}. Answer using ONLY the retrieved document context below.
+    console.log(`[AI-CHAT] Document context length: ${documentContext.length} chars`);
 
-Rules:
-1) If the retrieved context contains relevant information, answer directly and clearly.
-2) If the context does NOT contain the answer, reply exactly:
-   "I don't see anything in the uploaded documents that addresses this. Could you try rephrasing, or is there a specific document you'd like me to check?"
-3) When you use information, cite it naturally by document title (e.g. "According to the Employee Handbook...").
-4) Do not invent policies, figures, or procedures not present in the context.
+    const systemPrompt = `You are a helpful AI assistant for ${companyName}. Your job is to answer questions based on the company's knowledge base documents.
+
+IMPORTANT: Document excerpts are provided below. Use this information to answer the user's question.
+
+Instructions:
+1. If the excerpts contain relevant information, provide a clear, helpful answer based on that information.
+2. Cite the document title when referencing information (e.g., "According to [Document Title]...").
+3. If the excerpts don't contain information relevant to the question, say: "I don't see anything in the uploaded documents that addresses this. Could you try rephrasing, or is there a specific document you'd like me to check?"
+4. Be direct and confident in your answers - don't be overly cautious if the information is there.
 
 ${documentContext}`;
 
