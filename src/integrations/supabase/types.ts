@@ -742,6 +742,17 @@ export type Database = {
         }
         Returns: boolean
       }
+      search_user_documents: {
+        Args: { p_limit?: number; p_query: string; p_user_id: string }
+        Returns: {
+          department: string
+          excerpt: string
+          id: string
+          knowledge_type: string
+          rank: number
+          title: string
+        }[]
+      }
     }
     Enums: {
       app_role: "platform_admin" | "client_admin" | "employee"
