@@ -8,6 +8,10 @@ const corsHeaders = {
 };
 
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const OPENAI_EMBEDDING_URL = "https://api.openai.com/v1/embeddings";
+const EMBEDDING_MODEL = "text-embedding-3-small";
+const CHUNK_SIZE = 1000; // Characters per chunk
+const CHUNK_OVERLAP = 200; // Overlap between chunks
 
 // Extract text from XML content (removes tags, decodes entities)
 function extractTextFromXml(xml: string): string {
@@ -220,6 +224,54 @@ Format tables as plain text. Extract any text from images via OCR.`,
   return extractedText;
 }
 
+// Split text into overlapping chunks for embedding
+function chunkText(text: string, chunkSize: number, overlap: number): string[] {
+  const chunks: string[] = [];
+  let start = 0;
+  
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length);
+    const chunk = text.slice(start, end).trim();
+    
+    if (chunk.length > 50) { // Only include meaningful chunks
+      chunks.push(chunk);
+    }
+    
+    start += chunkSize - overlap;
+  }
+  
+  return chunks;
+}
+
+// Generate embeddings using OpenAI API
+async function generateEmbeddings(texts: string[], apiKey: string): Promise<number[][]> {
+  console.log(`Generating embeddings for ${texts.length} chunks...`);
+  
+  const response = await fetch(OPENAI_EMBEDDING_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: texts,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`OpenAI embedding error: ${response.status} - ${errorText}`);
+    throw new Error(`Embedding generation failed: ${response.status}`);
+  }
+
+  const result = await response.json();
+  const embeddings = result.data.map((item: { embedding: number[] }) => item.embedding);
+  
+  console.log(`Generated ${embeddings.length} embeddings`);
+  return embeddings;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -237,6 +289,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const token = authHeader.replace("Bearer ", "");
@@ -375,7 +428,62 @@ Content:
 ${contentText}
       `.trim();
 
-      const chunkCount = Math.max(1, Math.ceil(enrichedContent.length / 500));
+      // Generate embeddings if OpenAI API key is available
+      let embeddingsGenerated = 0;
+      
+      if (OPENAI_API_KEY && contentText.length > 50) {
+        try {
+          console.log(`Generating embeddings for document: ${doc.title}`);
+          
+          // Delete existing embeddings for this document
+          await supabase
+            .from("document_embeddings")
+            .delete()
+            .eq("document_id", documentId);
+          
+          // Chunk the text
+          const chunks = chunkText(enrichedContent, CHUNK_SIZE, CHUNK_OVERLAP);
+          console.log(`Created ${chunks.length} chunks`);
+          
+          if (chunks.length > 0) {
+            // Generate embeddings in batches of 20
+            const batchSize = 20;
+            
+            for (let i = 0; i < chunks.length; i += batchSize) {
+              const batchChunks = chunks.slice(i, i + batchSize);
+              const embeddings = await generateEmbeddings(batchChunks, OPENAI_API_KEY);
+              
+              // Insert embeddings into database
+              const embeddingRecords = batchChunks.map((chunk, idx) => ({
+                document_id: documentId,
+                user_id: user.id,
+                chunk_index: i + idx,
+                chunk_text: chunk,
+                embedding: `[${embeddings[idx].join(",")}]`,
+              }));
+              
+              const { error: insertError } = await supabase
+                .from("document_embeddings")
+                .insert(embeddingRecords);
+              
+              if (insertError) {
+                console.error("Error inserting embeddings:", insertError);
+              } else {
+                embeddingsGenerated += batchChunks.length;
+              }
+            }
+            
+            console.log(`Stored ${embeddingsGenerated} embeddings for document`);
+          }
+        } catch (embeddingError) {
+          console.error("Embedding generation failed:", embeddingError);
+          // Continue without embeddings - fall back to FTS
+        }
+      } else if (!OPENAI_API_KEY) {
+        console.log("OpenAI API key not configured - skipping embedding generation");
+      }
+
+      const chunkCount = Math.max(1, embeddingsGenerated || Math.ceil(enrichedContent.length / 500));
 
       const { data: settings } = await supabase
         .from("company_settings")
@@ -414,11 +522,11 @@ ${contentText}
         action: "Upload",
         document_id: documentId,
         document_title: doc.title,
-        details: `Processed: ${enrichedContent.length} chars, ${chunkCount} chunks. Status: ${updateData.document_status}`,
+        details: `Processed: ${enrichedContent.length} chars, ${chunkCount} chunks, ${embeddingsGenerated} embeddings. Status: ${updateData.document_status}`,
         result: "Success",
       });
 
-      console.log(`Document processed successfully: ${doc.title} (${enrichedContent.length} chars)`);
+      console.log(`Document processed successfully: ${doc.title} (${enrichedContent.length} chars, ${embeddingsGenerated} embeddings)`);
 
       return new Response(
         JSON.stringify({
@@ -426,6 +534,7 @@ ${contentText}
           documentId,
           status: updateData.document_status,
           chunkCount,
+          embeddingsGenerated,
           contentLength: enrichedContent.length,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -246,6 +246,44 @@ export type Database = {
         }
         Relationships: []
       }
+      document_embeddings: {
+        Row: {
+          chunk_index: number
+          chunk_text: string
+          created_at: string
+          document_id: string
+          embedding: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          chunk_index?: number
+          chunk_text: string
+          created_at?: string
+          document_id: string
+          embedding?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number
+          chunk_text?: string
+          created_at?: string
+          document_id?: string
+          embedding?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_embeddings_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       document_versions: {
         Row: {
           created_at: string
@@ -741,6 +779,22 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      search_document_embeddings: {
+        Args: {
+          p_match_count?: number
+          p_match_threshold?: number
+          p_query_embedding: string
+          p_user_id: string
+        }
+        Returns: {
+          chunk_text: string
+          department: string
+          document_id: string
+          document_title: string
+          id: string
+          similarity: number
+        }[]
       }
       search_user_documents: {
         Args: { p_limit?: number; p_query: string; p_user_id: string }
