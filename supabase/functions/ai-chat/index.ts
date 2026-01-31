@@ -1,9 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+// Model configuration - logged for transparency (not exposed to end users)
+const AI_MODEL = "gpt-4o";
+const AI_MODEL_VERSION = "2024-08-06";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 interface ChatMessage {
@@ -119,7 +124,7 @@ function calculateRelevance(query: string, document: string, title: string): { s
   return { score, excerpt: bestExcerpt, section: bestSection };
 }
 
-// Semantic search across documents
+// Semantic search across documents - now searches ALL documents (not just approved)
 function semanticSearch(query: string, documents: any[]): DocumentSource[] {
   const results: DocumentSource[] = [];
 
@@ -127,7 +132,7 @@ function semanticSearch(query: string, documents: any[]): DocumentSource[] {
     const searchableText = `${doc.title || ''} ${doc.content_text || ''} ${doc.questions_answered || ''} ${doc.notes || ''}`;
     const { score, excerpt, section } = calculateRelevance(query, searchableText, doc.title || '');
 
-    if (score > 0.5) { // Minimum relevance threshold
+    if (score > 0.3) { // Lower threshold for better recall
       results.push({
         id: doc.id,
         title: doc.title,
@@ -141,13 +146,17 @@ function semanticSearch(query: string, documents: any[]): DocumentSource[] {
   }
 
   // Sort by relevance and take top results
-  return results.sort((a, b) => b.relevance - a.relevance).slice(0, 5);
+  return results.sort((a, b) => b.relevance - a.relevance).slice(0, 8);
 }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Log model info at startup for admin transparency
+  console.info(`[AI-CHAT] Model Configuration: ${AI_MODEL} (version: ${AI_MODEL_VERSION})`);
+  console.info(`[AI-CHAT] API Endpoint: OpenAI Direct (${OPENAI_API_URL})`);
 
   try {
     const authHeader = req.headers.get("authorization");
@@ -186,118 +195,89 @@ serve(async (req) => {
 
     const userQuestion = messages[messages.length - 1]?.content || "";
 
-    console.log(`Processing question: "${userQuestion.slice(0, 100)}..."`);
+    console.info(`[AI-CHAT] Processing question: "${userQuestion.slice(0, 100)}..."`);
 
-    // Fetch all approved documents for semantic search
+    // Fetch ALL documents with content - no approval filtering
+    // Every uploaded document is treated as an approved source
     const { data: documents, error: docsError } = await supabase
       .from("documents")
       .select("id, title, department, knowledge_type, content_text, questions_answered, notes, chunk_count")
       .eq("user_id", user.id)
-      .eq("document_status", "approved")
       .eq("ai_enabled", true)
       .eq("processing_status", "completed")
       .not("content_text", "is", null);
 
     if (docsError) {
-      console.error("Error fetching documents:", docsError);
+      console.error("[AI-CHAT] Error fetching documents:", docsError);
     }
 
-    console.log(`Found ${documents?.length || 0} approved documents for search`);
+    const totalDocs = documents?.length || 0;
+    console.info(`[AI-CHAT] Found ${totalDocs} documents available for search (all treated as approved)`);
 
     // Perform semantic search
     const relevantDocs = documents && documents.length > 0 
       ? semanticSearch(userQuestion, documents)
       : [];
 
-    console.log(`Semantic search found ${relevantDocs.length} relevant documents`);
+    console.info(`[AI-CHAT] Semantic search found ${relevantDocs.length} relevant documents`);
+    if (relevantDocs.length > 0) {
+      console.info(`[AI-CHAT] Top matches: ${relevantDocs.slice(0, 3).map(d => `"${d.title}" (score: ${d.relevance.toFixed(2)})`).join(', ')}`);
+    }
 
-    // Get company settings
+    // Get company settings (for company name only, not for refuse behavior)
     const { data: settings } = await supabase
       .from("company_settings")
-      .select("show_sources_in_answers, refuse_without_sources, company_name")
+      .select("company_name, show_sources_in_answers")
       .eq("user_id", user.id)
       .single();
 
-    const showSources = settings?.show_sources_in_answers ?? true;
-    const refuseWithoutSources = settings?.refuse_without_sources ?? true;
     const companyName = settings?.company_name || "your organization";
+    const showSources = settings?.show_sources_in_answers ?? true;
 
-    // Build context from relevant documents
+    // Build context from relevant documents - include full content for better comprehension
     let documentContext = "";
     
     if (relevantDocs.length > 0) {
-      documentContext = "\n\n## Relevant Knowledge Base Documents:\n\n";
+      documentContext = "\n\n---\n\n## RETRIEVED DOCUMENT CONTENT:\n\n";
       for (const doc of relevantDocs) {
         documentContext += `### Document: "${doc.title}"\n`;
-        documentContext += `- Department: ${doc.department || "General"}\n`;
-        documentContext += `- Type: ${doc.knowledge_type || "General"}\n`;
-        if (doc.section) {
-          documentContext += `- Section: ${doc.section}\n`;
-        }
-        documentContext += `- Relevance Score: ${doc.relevance.toFixed(2)}\n`;
-        documentContext += `\n**Content:**\n${doc.excerpt}\n\n---\n\n`;
+        if (doc.department) documentContext += `Department: ${doc.department}\n`;
+        if (doc.section) documentContext += `Relevant Section: ${doc.section}\n`;
+        documentContext += `\n${doc.excerpt}\n\n---\n\n`;
       }
     }
 
-    // Build system prompt with semantic search guidance
-    const systemPrompt = `You are an internal AI knowledge assistant for ${companyName}. Your role is to help employees find accurate information from the organization's approved knowledge base.
+    // Build confident, ChatGPT-style system prompt
+    const systemPrompt = `You are an expert AI assistant for ${companyName}. Your job is to provide accurate, helpful, and confident answers to employee questions using the organization's document knowledge base.
 
-## Important Instructions:
-1. Answer questions based on the approved internal documents provided below.
-2. You should understand the MEANING and INTENT of questions, not just exact keyword matches.
-3. If the documents contain information related to the question (even if worded differently), use that information to answer.
-4. When answering, synthesize information naturally and cite the source documents.
-5. ${showSources ? "Always mention which document(s) you used to formulate your answer." : "Provide helpful answers based on the knowledge base."}
+## Your Behavior:
 
-## Response Guidelines:
-- Be concise but thorough
-- If multiple documents are relevant, combine the information
-- If the question is unclear, ask for clarification
-- For sensitive topics (HR issues, legal matters), recommend speaking with the appropriate department
+1. **Answer confidently**: If the retrieved documents contain relevant information, synthesize it into a clear, direct answer. Do not hedge unnecessarily.
 
-## When No Information is Found:
-${refuseWithoutSources 
-  ? `- Clearly state: "I couldn't find approved internal documentation on this topic."
-- Suggest the user try rephrasing or check with a specific department
-- Offer the "Request Knowledge" option to flag this as a gap`
-  : `- You may provide general guidance while noting it's not from the internal knowledge base
-- Still recommend checking official sources for critical matters`}
+2. **Be thorough but concise**: Provide complete answers that address the user's question. Include relevant details from the documents.
 
-${documentContext || "\n## Note: No approved documents are currently available in the knowledge base. Please upload and approve documents to enable AI-powered answers.\n"}`;
+3. **Cite sources naturally**: When appropriate, mention which document contains the information (e.g., "According to the Employee Handbook..." or "The Finance Policy states...").
 
-    // Check if we should refuse without sources
-    if (refuseWithoutSources && relevantDocs.length === 0) {
-      const noSourceResponse = {
-        content: `I searched the approved knowledge base but couldn't find documentation that addresses your question.
+4. **Use good judgment**: If the documents contain partial information, use it to give the best possible answer. Don't refuse just because coverage isn't 100% complete.
 
-**Your question:** "${userQuestion}"
+5. **Only decline when truly empty**: If the documents genuinely contain NOTHING relevant to the question, respond with: "I don't see anything in the uploaded documents that addresses this. Could you try rephrasing, or is there a specific document you'd like me to check?"
 
-**What you can do:**
-• Try rephrasing with different terms or more specific details
-• Check if this topic falls under a specific department (HR, Legal, Finance, etc.)
-• Use the **"Request Knowledge"** button to submit a request for this information to be added
+6. **Handle ambiguity**: If the question is unclear, ask a clarifying question rather than refusing.
 
-Would you like me to help you rephrase your question, or would you like to submit a knowledge request?`,
-        sources: [],
-        hasNoSource: true,
-      };
-      
-      // Log unanswered question for gap analysis
-      await supabase.from("unanswered_questions").insert({
-        user_id: user.id,
-        question: userQuestion,
-      });
+## What NOT to do:
 
-      return new Response(
-        JSON.stringify(noSourceResponse),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+- Do NOT say "I couldn't find an approved source" - all documents are approved
+- Do NOT add unnecessary disclaimers like "based on available information" when you have clear answers
+- Do NOT refuse to answer if there's ANY relevant content in the documents
+- Do NOT be overly cautious - answer like a knowledgeable colleague would
 
-    // Call Lovable AI Gateway
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+${documentContext || "\nNote: No documents have been uploaded yet. Let the user know they need to upload documents first."}`;
+
+    // Check OpenAI API key
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    if (!OPENAI_API_KEY) {
+      console.error("[AI-CHAT] OPENAI_API_KEY is not configured");
+      throw new Error("AI service not configured. Please add OPENAI_API_KEY.");
     }
 
     const aiMessages = [
@@ -305,43 +285,56 @@ Would you like me to help you rephrase your question, or would you like to submi
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    console.log("Calling AI gateway...");
+    console.info(`[AI-CHAT] Calling OpenAI API with model: ${AI_MODEL}`);
+    const requestStartTime = Date.now();
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch(OPENAI_API_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: AI_MODEL,
         messages: aiMessages,
-        stream: false,
+        temperature: 0.7,
+        max_tokens: 2000,
       }),
     });
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.info(`[AI-CHAT] OpenAI API response received in ${requestDuration}ms`);
+
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[AI-CHAT] OpenAI API error: ${response.status} - ${errorText}`);
+      
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limits exceeded, please try again later." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (response.status === 401) {
         return new Response(
-          JSON.stringify({ error: "AI service payment required." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "AI service authentication error." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const aiResponse = await response.json();
     const assistantMessage = aiResponse.choices?.[0]?.message?.content || "I apologize, but I couldn't generate a response. Please try again.";
+    
+    // Log usage for monitoring
+    const usage = aiResponse.usage;
+    if (usage) {
+      console.info(`[AI-CHAT] Token usage - Prompt: ${usage.prompt_tokens}, Completion: ${usage.completion_tokens}, Total: ${usage.total_tokens}`);
+    }
+    console.info(`[AI-CHAT] Model used: ${aiResponse.model}`);
 
-    // Prepare sources for response with section info
+    // Prepare sources for response
     const sourcesForResponse = showSources && relevantDocs.length > 0
       ? relevantDocs.map(d => ({
           id: d.id,
@@ -351,14 +344,6 @@ Would you like me to help you rephrase your question, or would you like to submi
           section: d.section || undefined,
         }))
       : [];
-
-    // Log if no sources were found (for gap analysis)
-    if (relevantDocs.length === 0) {
-      await supabase.from("unanswered_questions").insert({
-        user_id: user.id,
-        question: userQuestion,
-      });
-    }
 
     // Save messages to conversation if conversationId provided
     if (conversationId) {
@@ -377,19 +362,20 @@ Would you like me to help you rephrase your question, or would you like to submi
       ]);
     }
 
-    console.log(`Response generated successfully with ${sourcesForResponse.length} sources`);
+    console.info(`[AI-CHAT] Response generated successfully with ${sourcesForResponse.length} sources`);
 
+    // Never set hasNoSource to true - we always try to answer
     return new Response(
       JSON.stringify({
         content: assistantMessage,
         sources: sourcesForResponse,
-        hasNoSource: relevantDocs.length === 0,
+        hasNoSource: false, // Removed the "no source" behavior
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
-    console.error("Chat error:", error);
+    console.error("[AI-CHAT] Error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -56,7 +56,7 @@ export default function AIChat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hello! I'm your AI Knowledge Assistant. I can help you find information from your organization's approved knowledge base. What would you like to know?",
+      content: "Hello! I'm your AI Knowledge Assistant. I can help you find information from your organization's knowledge base. Ask me anything about your documents!",
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -309,7 +309,7 @@ export default function AIChat() {
                 placeholder="Ask a question about your organization's knowledge..."
               />
               <p className="mt-2 text-center text-xs text-muted-foreground">
-                AI answers are based only on approved internal documents
+                AI answers are based on your organization's uploaded documents
               </p>
             </div>
           </div>
