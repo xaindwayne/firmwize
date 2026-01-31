@@ -10,8 +10,7 @@ const corsHeaders = {
 const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const OPENAI_EMBEDDING_URL = "https://api.openai.com/v1/embeddings";
 const EMBEDDING_MODEL = "text-embedding-3-small";
-const CHUNK_SIZE = 1000; // Characters per chunk
-const CHUNK_OVERLAP = 200; // Overlap between chunks
+const AI_MODEL = "openai/gpt-5";
 
 // Extract text from XML content (removes tags, decodes entities)
 function extractTextFromXml(xml: string): string {
@@ -152,7 +151,7 @@ async function extractXlsxText(zip: JSZip): Promise<string> {
 
 // Convert Uint8Array to base64 without stack overflow
 function uint8ArrayToBase64(bytes: Uint8Array): string {
-  const CHUNK_SIZE = 0x8000; // 32KB chunks
+  const CHUNK_SIZE = 0x8000;
   const chunks: string[] = [];
   
   for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
@@ -167,16 +166,13 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 async function extractPdfWithAI(pdfBytes: Uint8Array, title: string, apiKey: string): Promise<string> {
   console.log(`Attempting AI-based PDF extraction for ${pdfBytes.length} bytes...`);
   
-  // Check file size - limit to ~10MB for API
   if (pdfBytes.length > 10 * 1024 * 1024) {
     throw new Error("PDF too large for AI extraction (max 10MB)");
   }
   
-  // Convert PDF to base64 using chunked approach
   const base64 = uint8ArrayToBase64(pdfBytes);
   console.log(`Encoded PDF to base64: ${base64.length} chars`);
   
-  // Use AI to extract content
   const response = await fetch(AI_GATEWAY_URL, {
     method: "POST",
     headers: {
@@ -224,17 +220,145 @@ Format tables as plain text. Extract any text from images via OCR.`,
   return extractedText;
 }
 
-// Split text into overlapping chunks for embedding
-function chunkText(text: string, chunkSize: number, overlap: number): string[] {
-  const chunks: string[] = [];
+interface SemanticChunk {
+  content: string;
+  topic: string;
+  type: string;
+  context: string;
+}
+
+// Use AI to analyze document and create semantic chunks
+async function analyzeAndChunkDocument(
+  rawText: string, 
+  title: string, 
+  department: string,
+  apiKey: string
+): Promise<SemanticChunk[]> {
+  console.log(`Analyzing document with AI: ${title} (${rawText.length} chars)`);
+  
+  // Truncate very long documents for analysis
+  const maxAnalysisLength = 50000;
+  const textForAnalysis = rawText.length > maxAnalysisLength 
+    ? rawText.substring(0, maxAnalysisLength) + "\n\n[Document truncated for analysis...]"
+    : rawText;
+  
+  const analysisPrompt = `You are a knowledge extraction specialist. Analyze this document and break it into semantic chunks that preserve meaning and context.
+
+DOCUMENT TITLE: ${title}
+DEPARTMENT: ${department}
+
+DOCUMENT CONTENT:
+${textForAnalysis}
+
+---
+
+Your task:
+1. Identify the key topics, processes, policies, rules, and concepts in this document
+2. Break the document into 5-20 semantic chunks, where each chunk:
+   - Contains a complete, self-contained piece of knowledge
+   - Preserves context and relationships to other concepts
+   - Is between 200-1500 characters
+   - Can answer a specific question or explain a specific topic
+
+For each chunk, provide:
+- content: The actual text/information (can be paraphrased or restructured for clarity)
+- topic: A short label describing what this chunk is about
+- type: One of: process, policy, definition, rule, exception, contact, faq, procedure, overview, detail
+- context: Brief context about how this relates to the broader document
+
+Return ONLY a valid JSON array of chunks. Example format:
+[
+  {
+    "content": "The vacation policy allows employees to accrue 15 days of PTO per year. Unused days can be carried over up to a maximum of 5 days into the next calendar year.",
+    "topic": "PTO Accrual and Carryover",
+    "type": "policy",
+    "context": "Part of the employee benefits and vacation policy"
+  }
+]
+
+IMPORTANT: 
+- Extract and restructure information to be clear and self-contained
+- Each chunk should make sense on its own without needing the rest of the document
+- Preserve specific details like numbers, dates, names, and procedures
+- If the document has Q&A sections, keep questions with their answers
+- Return ONLY the JSON array, no other text`;
+
+  try {
+    const response = await fetch(AI_GATEWAY_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages: [
+          { role: "system", content: "You are a knowledge extraction AI. You always respond with valid JSON arrays only." },
+          { role: "user", content: analysisPrompt }
+        ],
+        max_completion_tokens: 8000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`AI analysis failed: ${response.status} - ${errorText}`);
+      throw new Error(`AI analysis failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || "";
+    
+    // Parse JSON from response (handle markdown code blocks)
+    let jsonStr = content.trim();
+    if (jsonStr.startsWith("```json")) {
+      jsonStr = jsonStr.slice(7);
+    } else if (jsonStr.startsWith("```")) {
+      jsonStr = jsonStr.slice(3);
+    }
+    if (jsonStr.endsWith("```")) {
+      jsonStr = jsonStr.slice(0, -3);
+    }
+    jsonStr = jsonStr.trim();
+    
+    const chunks = JSON.parse(jsonStr) as SemanticChunk[];
+    console.log(`AI created ${chunks.length} semantic chunks`);
+    
+    // Validate and filter chunks
+    const validChunks = chunks.filter(chunk => 
+      chunk.content && 
+      chunk.content.length >= 50 && 
+      chunk.topic && 
+      chunk.type
+    );
+    
+    console.log(`Valid semantic chunks: ${validChunks.length}`);
+    return validChunks;
+    
+  } catch (error) {
+    console.error("AI chunking failed, falling back to basic chunking:", error);
+    return [];
+  }
+}
+
+// Fallback: Basic mechanical chunking
+function basicChunkText(text: string, chunkSize: number, overlap: number): SemanticChunk[] {
+  const chunks: SemanticChunk[] = [];
   let start = 0;
+  let index = 0;
   
   while (start < text.length) {
     const end = Math.min(start + chunkSize, text.length);
     const chunk = text.slice(start, end).trim();
     
-    if (chunk.length > 50) { // Only include meaningful chunks
-      chunks.push(chunk);
+    if (chunk.length > 50) {
+      chunks.push({
+        content: chunk,
+        topic: `Section ${index + 1}`,
+        type: "detail",
+        context: "Document excerpt"
+      });
+      index++;
     }
     
     start += chunkSize - overlap;
@@ -327,7 +451,7 @@ serve(async (req) => {
 
     await supabase
       .from("documents")
-      .update({ processing_status: "processing", status: "Indexing" })
+      .update({ processing_status: "processing", status: "Analyzing with AI..." })
       .eq("id", documentId);
 
     console.log(`Processing document: ${doc.title} (${doc.file_path})`);
@@ -348,6 +472,7 @@ serve(async (req) => {
 
       console.log(`File type: ${fileType}, Filename: ${filename}`);
 
+      // Step 1: Extract raw text from document
       if (fileType === "text/plain" || filename.endsWith(".txt")) {
         contentText = await fileData.text();
         console.log(`Extracted ${contentText.length} chars from plain text`);
@@ -360,44 +485,30 @@ serve(async (req) => {
         const arrayBuffer = await fileData.arrayBuffer();
         const buffer = new Uint8Array(arrayBuffer);
         
-        // Use AI to extract PDF content
         if (LOVABLE_API_KEY) {
           try {
             contentText = await extractPdfWithAI(buffer, doc.title, LOVABLE_API_KEY);
           } catch (aiError) {
             console.error("AI PDF extraction failed:", aiError);
-            contentText = `[PDF document: ${doc.title}] - Unable to extract text. Consider uploading as DOCX or TXT format for better results.`;
+            contentText = `[PDF document: ${doc.title}] - Unable to extract text.`;
           }
         } else {
-          contentText = `[PDF document: ${doc.title}] - PDF extraction requires AI service configuration.`;
+          contentText = `[PDF document: ${doc.title}] - PDF extraction requires AI service.`;
         }
         
-        if (!contentText || contentText.trim().length < 50) {
-          contentText = `[PDF document: ${doc.title}] - This PDF may contain scanned images or encrypted content. Consider using DOCX or TXT format.`;
-        }
-        
-      } else if (
-        fileType.includes("wordprocessingml") || 
-        filename.endsWith(".docx")
-      ) {
+      } else if (fileType.includes("wordprocessingml") || filename.endsWith(".docx")) {
         const arrayBuffer = await fileData.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
         contentText = await extractDocxText(zip);
         console.log(`Extracted ${contentText.length} chars from DOCX`);
         
-      } else if (
-        fileType.includes("presentationml") || 
-        filename.endsWith(".pptx")
-      ) {
+      } else if (fileType.includes("presentationml") || filename.endsWith(".pptx")) {
         const arrayBuffer = await fileData.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
         contentText = await extractPptxText(zip);
         console.log(`Extracted ${contentText.length} chars from PPTX`);
         
-      } else if (
-        fileType.includes("spreadsheetml") || 
-        filename.endsWith(".xlsx")
-      ) {
+      } else if (fileType.includes("spreadsheetml") || filename.endsWith(".xlsx")) {
         const arrayBuffer = await fileData.arrayBuffer();
         const zip = await JSZip.loadAsync(arrayBuffer);
         contentText = await extractXlsxText(zip);
@@ -407,84 +518,113 @@ serve(async (req) => {
         try {
           contentText = await fileData.text();
           if (contentText.includes("\0") || contentText.length < 10) {
-            contentText = `[Document: ${doc.title}] - File type: ${fileType}. Unable to extract text content.`;
+            contentText = `[Document: ${doc.title}] - Unable to extract text.`;
           }
         } catch {
-          contentText = `[Document: ${doc.title}] - File type: ${fileType}. Unable to extract text content.`;
+          contentText = `[Document: ${doc.title}] - Unable to extract text.`;
         }
-        console.log(`Fallback extraction: ${contentText.length} chars`);
       }
 
       if (!contentText || contentText.trim().length === 0) {
-        contentText = `[Document: ${doc.title}] - No text content could be extracted from this file.`;
+        contentText = `[Document: ${doc.title}] - No text content could be extracted.`;
       }
 
+      // Step 2: Use AI to analyze and create semantic chunks
+      let semanticChunks: SemanticChunk[] = [];
+      
+      if (LOVABLE_API_KEY && contentText.length > 100) {
+        await supabase
+          .from("documents")
+          .update({ status: "AI analyzing content..." })
+          .eq("id", documentId);
+          
+        semanticChunks = await analyzeAndChunkDocument(
+          contentText, 
+          doc.title, 
+          doc.department || "General",
+          LOVABLE_API_KEY
+        );
+      }
+      
+      // Fallback to basic chunking if AI analysis failed or returned no chunks
+      if (semanticChunks.length === 0) {
+        console.log("Using fallback basic chunking");
+        semanticChunks = basicChunkText(contentText, 1000, 200);
+      }
+
+      // Build enriched content for storage (combine all chunks)
       const enrichedContent = `
 Title: ${doc.title}
 Department: ${doc.department || "General"}
 ${doc.notes ? `Notes: ${doc.notes}` : ""}
 
-Content:
-${contentText}
+--- AI-Analyzed Knowledge ---
+
+${semanticChunks.map((chunk, i) => `
+[${chunk.topic}] (${chunk.type})
+${chunk.content}
+Context: ${chunk.context}
+`).join("\n---\n")}
       `.trim();
 
-      // Generate embeddings if OpenAI API key is available
+      // Step 3: Generate embeddings for semantic chunks
       let embeddingsGenerated = 0;
       
-      if (OPENAI_API_KEY && contentText.length > 50) {
+      if (OPENAI_API_KEY && semanticChunks.length > 0) {
         try {
-          console.log(`Generating embeddings for document: ${doc.title}`);
+          await supabase
+            .from("documents")
+            .update({ status: "Generating embeddings..." })
+            .eq("id", documentId);
+            
+          console.log(`Generating embeddings for ${semanticChunks.length} semantic chunks`);
           
-          // Delete existing embeddings for this document
+          // Delete existing embeddings
           await supabase
             .from("document_embeddings")
             .delete()
             .eq("document_id", documentId);
           
-          // Chunk the text
-          const chunks = chunkText(enrichedContent, CHUNK_SIZE, CHUNK_OVERLAP);
-          console.log(`Created ${chunks.length} chunks`);
+          // Prepare embedding texts with context
+          const embeddingTexts = semanticChunks.map(chunk => 
+            `[${chunk.topic}] [${chunk.type}] ${chunk.content} (Context: ${chunk.context})`
+          );
           
-          if (chunks.length > 0) {
-            // Generate embeddings in batches of 20
-            const batchSize = 20;
+          // Generate embeddings in batches
+          const batchSize = 20;
+          
+          for (let i = 0; i < embeddingTexts.length; i += batchSize) {
+            const batchTexts = embeddingTexts.slice(i, i + batchSize);
+            const batchChunks = semanticChunks.slice(i, i + batchSize);
+            const embeddings = await generateEmbeddings(batchTexts, OPENAI_API_KEY);
             
-            for (let i = 0; i < chunks.length; i += batchSize) {
-              const batchChunks = chunks.slice(i, i + batchSize);
-              const embeddings = await generateEmbeddings(batchChunks, OPENAI_API_KEY);
-              
-              // Insert embeddings into database
-              const embeddingRecords = batchChunks.map((chunk, idx) => ({
-                document_id: documentId,
-                user_id: user.id,
-                chunk_index: i + idx,
-                chunk_text: chunk,
-                embedding: `[${embeddings[idx].join(",")}]`,
-              }));
-              
-              const { error: insertError } = await supabase
-                .from("document_embeddings")
-                .insert(embeddingRecords);
-              
-              if (insertError) {
-                console.error("Error inserting embeddings:", insertError);
-              } else {
-                embeddingsGenerated += batchChunks.length;
-              }
+            // Store embeddings with semantic metadata
+            const embeddingRecords = batchChunks.map((chunk, idx) => ({
+              document_id: documentId,
+              user_id: user.id,
+              chunk_index: i + idx,
+              chunk_text: `[${chunk.topic}] (${chunk.type})\n${chunk.content}\nContext: ${chunk.context}`,
+              embedding: `[${embeddings[idx].join(",")}]`,
+            }));
+            
+            const { error: insertError } = await supabase
+              .from("document_embeddings")
+              .insert(embeddingRecords);
+            
+            if (insertError) {
+              console.error("Error inserting embeddings:", insertError);
+            } else {
+              embeddingsGenerated += batchChunks.length;
             }
-            
-            console.log(`Stored ${embeddingsGenerated} embeddings for document`);
           }
+          
+          console.log(`Stored ${embeddingsGenerated} semantic embeddings`);
         } catch (embeddingError) {
           console.error("Embedding generation failed:", embeddingError);
-          // Continue without embeddings - fall back to FTS
         }
-      } else if (!OPENAI_API_KEY) {
-        console.log("OpenAI API key not configured - skipping embedding generation");
       }
 
-      const chunkCount = Math.max(1, embeddingsGenerated || Math.ceil(enrichedContent.length / 500));
-
+      // Update document with processed content
       const { data: settings } = await supabase
         .from("company_settings")
         .select("require_manual_approval")
@@ -497,15 +637,10 @@ ${contentText}
         content_text: enrichedContent,
         processing_status: "completed",
         processed_at: new Date().toISOString(),
-        chunk_count: chunkCount,
+        chunk_count: embeddingsGenerated || semanticChunks.length,
         status: "Ready",
+        document_status: requireManualApproval ? "in_review" : "approved",
       };
-
-      if (!requireManualApproval) {
-        updateData.document_status = "approved";
-      } else {
-        updateData.document_status = "in_review";
-      }
 
       const { error: updateError } = await supabase
         .from("documents")
@@ -513,7 +648,6 @@ ${contentText}
         .eq("id", documentId);
 
       if (updateError) {
-        console.error("Failed to update document:", updateError);
         throw new Error(`Failed to update document: ${updateError.message}`);
       }
 
@@ -522,18 +656,18 @@ ${contentText}
         action: "Upload",
         document_id: documentId,
         document_title: doc.title,
-        details: `Processed: ${enrichedContent.length} chars, ${chunkCount} chunks, ${embeddingsGenerated} embeddings. Status: ${updateData.document_status}`,
+        details: `AI-processed: ${contentText.length} chars → ${semanticChunks.length} semantic chunks → ${embeddingsGenerated} embeddings`,
         result: "Success",
       });
 
-      console.log(`Document processed successfully: ${doc.title} (${enrichedContent.length} chars, ${embeddingsGenerated} embeddings)`);
+      console.log(`Document AI-processed: ${doc.title} (${semanticChunks.length} chunks, ${embeddingsGenerated} embeddings)`);
 
       return new Response(
         JSON.stringify({
           success: true,
           documentId,
           status: updateData.document_status,
-          chunkCount,
+          semanticChunks: semanticChunks.length,
           embeddingsGenerated,
           contentLength: enrichedContent.length,
         }),
