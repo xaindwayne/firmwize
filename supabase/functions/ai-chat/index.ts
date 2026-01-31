@@ -134,6 +134,8 @@ serve(async (req) => {
     const showSources = settings?.show_sources_in_answers ?? true;
 
     // Server-side ranked retrieval (fast + accurate)
+    console.log(`[AI-CHAT] Searching documents for user: ${user.id}, query: "${userQuestion.substring(0, 50)}..."`);
+    
     const { data: docs, error: docsError } = await supabase.rpc("search_user_documents", {
       p_user_id: user.id,
       p_query: userQuestion,
@@ -143,6 +145,8 @@ serve(async (req) => {
     if (docsError) {
       console.error("[AI-CHAT] search_user_documents error:", docsError);
     }
+    
+    console.log(`[AI-CHAT] Found ${docs?.length || 0} documents`);
 
     const relevantDocs: RetrievedDoc[] = Array.isArray(docs) ? (docs as RetrievedDoc[]) : [];
 
